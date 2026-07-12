@@ -92,8 +92,8 @@
 │  ┌───────────────────────────────────────────────┼──────────────────┐  │
 │  │                   Subagent 层                  │                  │  │
 │  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌┴─────────┐    │  │
-│  │  │  RAG   │ │ 记忆   │ │ 写作   │ │ Bash   │ │  闲聊    │    │  │
-│  │  │ 知识库  │ │ 与偏好  │ │ 润色   │ │ 命令行 │ │  陪伴    │    │  │
+│  │  │  RAG   │ │ 记忆   │ │ 写作   │ │ 日程   │ │  闲聊    │    │  │
+│  │  │ 知识库  │ │ 与偏好  │ │ 润色   │ │ 与任务  │ │  陪伴    │    │  │
 │  │  └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └────┬─────┘    │  │
 │  └──────┼──────────┼──────────┼──────────┼───────────┼──────────┘  │
 ├─────────┼──────────┼──────────┼──────────┼───────────┼──────────────┤
@@ -233,23 +233,27 @@ CREATE TABLE interaction_log (
 {"name":"writing_translate","description":"翻译文本。用户说'翻译'、'翻译成'、'translate'时触发。","parameters":{"type":"object","properties":{"text":{"type":"string","description":"需要翻译的原文"},"source_lang":{"type":"string","description":"源语言，auto 表示自动检测"},"target_lang":{"type":"string","description":"目标语言，如 zh-CN/en/ja"},"keep_formatting":{"type":"boolean","description":"是否保留原文格式（Markdown/代码块等）"}},"required":["text","target_lang"]}}
 ```
 
-### 3.4 Bash 命令行 Subagent
+### 3.4 日程与任务 Subagent
 
-**定位**：安全执行本地 Bash 命令
+**定位**：本地日程管理与任务追踪，自然语言创建日程/待办
 
 **工具定义** (`functions.jsonl`)：
 
 ```jsonl
-{"name":"bash_exec","description":"在当前工作目录执行一个 Bash 命令并返回结果。用户说'运行'、'执行'、'查看文件'、'ls'、'cat'时触发。仅用于只读或安全的本地操作。","parameters":{"type":"object","properties":{"command":{"type":"string","description":"要执行的 bash 命令"},"workdir":{"type":"string","description":"工作目录，默认为当前项目目录"},"timeout":{"type":"integer","description":"超时秒数，默认30，最大120"}},"required":["command"]}}
-{"name":"bash_spawn","description":"在后台启动一个长时间运行的服务或进程。用户说'启动服务'、'后台运行'时触发。","parameters":{"type":"object","properties":{"command":{"type":"string","description":"要后台执行的命令"},"workdir":{"type":"string","description":"工作目录"},"label":{"type":"string","description":"进程标签，方便后续查询和管理"}},"required":["command"]}}
-{"name":"bash_status","description":"查询当前 Bash Subagent 管理的后台进程状态。","parameters":{"type":"object","properties":{"label":{"type":"string","description":"可选，按标签过滤"}},"required":[]}}
+{"name":"schedule_create_event","description":"创建日程事件。用户说'安排会议'、'明天下午3点开会'、'加个日程'时触发。","parameters":{"type":"object","properties":{"title":{"type":"string","description":"日程标题"},"start_time":{"type":"string","description":"开始时间，支持自然语言如'明天下午3点'"},"end_time":{"type":"string","description":"结束时间，可选"},"location":{"type":"string","description":"地点，可选"},"category":{"type":"string","enum":["work","personal","study","meeting","other"],"description":"日程类别"},"reminder_minutes":{"type":"integer","description":"提前提醒分钟数，默认15"}},"required":["title","start_time"]}}
+{"name":"schedule_query","description":"查询日程。用户说'今天有什么安排'、'这周有什么会议'、'查一下日程'时触发。","parameters":{"type":"object","properties":{"time_range":{"type":"string","enum":["today","tomorrow","this_week","next_week","all"],"description":"时间范围，默认today"},"category":{"type":"string","description":"可选，按类别过滤"},"status":{"type":"string","enum":["pending","completed","cancelled","all"],"description":"状态过滤，默认pending"}},"required":[]}}
+{"name":"schedule_create_task","description":"创建任务（待办事项）。用户说'帮我记个待办'、'下周一之前完成XXX'、'添加任务'时触发。","parameters":{"type":"object","properties":{"title":{"type":"string","description":"任务标题"},"priority":{"type":"integer","minimum":1,"maximum":5,"description":"优先级1-5，默认3"},"due_date":{"type":"string","description":"截止日期，支持自然语言"},"tags":{"type":"string","description":"标签，逗号分隔"},"description":{"type":"string","description":"任务描述"}},"required":["title"]}}
+{"name":"schedule_list_tasks","description":"查询任务列表。用户说'还有哪些没完成'、'待办列表'、'查一下任务'时触发。","parameters":{"type":"object","properties":{"status":{"type":"string","enum":["pending","in_progress","completed","all"],"description":"状态过滤，默认pending"},"priority":{"type":"integer","description":"可选，按优先级过滤"},"tags":{"type":"string","description":"可选，按标签过滤"}},"required":[]}}
+{"name":"schedule_complete_task","description":"标记任务完成。用户说'完成了XXX'、'这个任务做完了'时触发。","parameters":{"type":"object","properties":{"task_id":{"type":"integer","description":"任务ID"}},"required":["task_id"]}}
 ```
 
-**安全约束**：
-- 命令白名单 + 黑名单双重校验
-- 绝对禁止：`rm -rf /`、`dd`、`mkfs`、`shutdown`、`reboot`、`chmod 777 /`、fork bomb
-- 写入操作需确认（`rm`、`mv`、`cp` 等）
-- 输出截断防止上下文溢出
+**数据模型**：events 表 + tasks 表（详见 §5.1）
+
+**核心能力**：
+- dateparser 自然语言时间解析（"明天下午3点" / "下周一" / "3小时后"）
+- 重复日程支持（daily/weekly/monthly）
+- 任务优先级 + 标签 + 子任务
+- 与记忆 Subagent 协同（偏好引擎检测时间规律 -> 建议创建重复日程）
 
 ### 3.5 闲聊陪伴 Subagent
 
@@ -272,11 +276,11 @@ CREATE TABLE interaction_log (
 | RAG 知识库 | 3 | 否（本地检索） | 1-3s | ChromaDB |
 | 记忆与偏好 | 3 | 否（本地检索） | <1s | SQLite + ChromaDB |
 | 写作润色翻译 | 3 | **是** | 10-40s | 无 |
-| Bash 命令行 | 3 | 否（本地执行） | <1-30s | SQLite（进程管理） |
+| 日程与任务 | 5 | 否（本地 SQLite） | <1s | SQLite |
 | 闲聊陪伴 | 1 | **否**（路由模型直回） | 1-3s | SQLite（记忆注入） |
-| **合计** | **13** | | | |
+| **合计** | **15** | | | |
 
-加上 MTClaw 的 5 个 builtin 工具（find/ls/cat/grep/sleep），总计 18 个工具暴露给路由模型。
+加上 MTClaw 的 5 个 builtin 工具（find/ls/cat/grep/sleep），总计 20 个工具暴露给路由模型。
 
 **注意**：v2.0 将工具数从 24 降到 18，其中 13 个为 Prometheus 自定义工具。研究表明 LLM function calling 在工具数 <15 时准确率最高 [推测]。我们通过 5 个 Subagent 的清晰划分（每个 1-3 个工具）来保持路由模型的判断精度。
 
@@ -420,17 +424,40 @@ CREATE TABLE reflection_log (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
--- 后台进程表
-CREATE TABLE bash_processes (
+-- 日程事件
+CREATE TABLE events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pid INTEGER NOT NULL,
-    label TEXT,
-    command TEXT NOT NULL,
-    workdir TEXT,
-    status TEXT DEFAULT 'running',
-    started_at TEXT DEFAULT (datetime('now')),
-    stopped_at TEXT
+    title TEXT NOT NULL,
+    description TEXT,
+    start_time TEXT NOT NULL,
+    end_time TEXT,
+    location TEXT,
+    category TEXT DEFAULT 'general',
+    reminder_minutes INTEGER DEFAULT 15,
+    status TEXT DEFAULT 'pending',
+    created_at TEXT DEFAULT (datetime('now')),
+    source TEXT DEFAULT 'user'
 );
+
+-- 任务（待办事项）
+CREATE TABLE tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    priority INTEGER DEFAULT 3,
+    status TEXT DEFAULT 'pending',
+    due_date TEXT,
+    tags TEXT,
+    parent_task_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT,
+    FOREIGN KEY (parent_task_id) REFERENCES tasks(id)
+);
+
+-- 索引
+CREATE INDEX idx_events_start ON events(start_time);
+CREATE INDEX idx_tasks_status ON tasks(status);
+CREATE INDEX idx_tasks_due ON tasks(due_date);
 
 -- 索引
 CREATE INDEX idx_memories_category ON memories(category);
@@ -492,15 +519,17 @@ CREATE INDEX idx_interaction_subagent ON interaction_log(subagent, timestamp);
 │   ├── writing_generate.sh
 │   ├── writing_polish.sh
 │   ├── writing_translate.sh
-│   ├── bash_exec.sh
-│   ├── bash_spawn.sh
-│   ├── bash_status.sh
+│   ├── schedule_create_event.sh
+│   ├── schedule_query.sh
+│   ├── schedule_create_task.sh
+│   ├── schedule_list_tasks.sh
+│   ├── schedule_complete_task.sh
 │   └── chat_light.sh
 ├── python_tools/              # Python 工具模块
 │   ├── rag_engine.py
 │   ├── memory_engine.py
 │   ├── writing_engine.py
-│   ├── bash_engine.py
+│   ├── schedule_engine.py
 │   ├── chat_engine.py
 │   └── preference_engine.py   # 即时偏好引擎
 ├── templates/                 # 写作模板
@@ -554,11 +583,12 @@ def generate(doc_type: str, topic: str, key_points: list[str], style: str, lengt
 def polish(text: str, goal: str, target_language: str = None) -> dict
 def translate(text: str, source_lang: str, target_lang: str, keep_formatting: bool = True) -> dict
 
-# bash_engine.py
-def exec_cmd(command: str, workdir: str = ".", timeout: int = 30) -> dict
-def spawn_process(command: str, workdir: str = ".", label: str = "") -> dict
-def list_processes(label: str = None) -> list[dict]
-def kill_process(pid: int) -> dict
+# schedule_engine.py
+def create_event(title: str, start_time: str, end_time: str = None, location: str = None, category: str = "general", reminder_minutes: int = 15) -> dict
+def query_events(time_range: str = "today", category: str = None, status: str = "pending") -> list[dict]
+def create_task(title: str, priority: int = 3, due_date: str = None, tags: str = None, description: str = None) -> dict
+def list_tasks(status: str = "pending", priority: int = None, tags: str = None) -> list[dict]
+def complete_task(task_id: int) -> dict
 
 # chat_engine.py
 def chat(mood: str = "auto", memory_inject: bool = True) -> dict
@@ -605,11 +635,7 @@ def run_daily_maintenance() -> dict
     "preference_cron": "0 2 * * *",
     "max_memories_per_user": 1000,
     "embedding_model": "BAAI/bge-m3",
-    "embedding_device": "cpu",
-    "bash_whitelist": ["find","grep","cat","ls","wc","head","tail","awk","sed","sort","uniq","curl","wget","git","python3","node","npm","pip","df","du","ps","top","free","echo","date","env","mkdir","touch","cp","mv"],
-    "bash_blacklist": ["rm -rf /","dd","mkfs","shutdown","reboot","chmod 777 /",":(){ :|:& };:"],
-    "bash_timeout_s": 30,
-    "bash_max_output_chars": 10000
+    "embedding_device": "cpu"
   }
 }
 ```
@@ -634,7 +660,7 @@ def run_daily_maintenance() -> dict
     │     ├── 命中 rag_*        -> RAG Subagent
     │     ├── 命中 memory_*     -> 记忆 Subagent
     │     ├── 命中 writing_*    -> 写作 Subagent
-    │     ├── 命中 bash_*       -> Bash Subagent
+    │     ├── 命中 schedule_*   -> 日程与任务 Subagent
     │     ├── 命中 chat_light   -> 闲聊 Subagent（路由模型直回）
     │     └── 未命中任何工具     -> 上游 LLM
     │
@@ -650,8 +676,8 @@ def run_daily_maintenance() -> dict
 | 1 | 包含"提醒"/"记住了"/"以后都" | 记忆 Subagent | 明确偏好声明 |
 | 2 | 包含"翻译"/"translate" | 写作 Subagent | 翻译 |
 | 3 | 包含"帮我写"/"生成"/"起草"/"润色" | 写作 Subagent | 写作 |
-| 4 | 包含"找一下"/"搜索"/"查一下" + 文档语境 | RAG Subagent | 知识检索 |
-| 5 | 包含"运行"/"执行" + Bash 命令 | Bash Subagent | 命令行操作 |
+| 4 | 包含"日程"/"会议"/"待办"/"任务"/"安排" | 日程与任务 Subagent | 日程管理 |
+| 5 | 包含"找一下"/"搜索"/"查一下" + 文档语境 | RAG Subagent | 知识检索 |
 | 6 | 轻量寒暄/笑话/闲聊 | 闲聊 Subagent | 快速直回 |
 | 7 | 以上都不匹配 | 上游 LLM | 通用推理 |
 
@@ -689,7 +715,7 @@ prometheus/                          # Git 仓库根目录
 │   │   ├── rag_engine.py            # 文档索引 + 检索
 │   │   ├── memory_engine.py         # 记忆管理 + 交互日志
 │   │   ├── writing_engine.py        # 写作生成 + 润色 + 翻译
-│   │   ├── bash_engine.py           # Bash 执行沙箱 + 进程管理
+│   │   ├── schedule_engine.py       # 日程管理 + 任务追踪
 │   │   ├── chat_engine.py           # 闲聊直回
 │   │   └── preference_engine.py     # 即时偏好引擎
 │   └── cli/
@@ -711,9 +737,11 @@ prometheus/                          # Git 仓库根目录
 │   ├── writing_generate.sh
 │   ├── writing_polish.sh
 │   ├── writing_translate.sh
-│   ├── bash_exec.sh
-│   ├── bash_spawn.sh
-│   ├── bash_status.sh
+│   ├── schedule_create_event.sh
+│   ├── schedule_query.sh
+│   ├── schedule_create_task.sh
+│   ├── schedule_list_tasks.sh
+│   ├── schedule_complete_task.sh
 │   └── chat_light.sh
 │
 ├── templates/                       # 写作模板
@@ -735,7 +763,7 @@ prometheus/                          # Git 仓库根目录
 │   ├── test_rag_engine.py
 │   ├── test_memory_engine.py
 │   ├── test_writing_engine.py
-│   ├── test_bash_engine.py
+│   ├── test_schedule_engine.py
 │   ├── test_chat_engine.py
 │   ├── test_preference_engine.py
 │   ├── test_routing_accuracy.py     # 路由准确率测试（50 条混合意图）
@@ -894,7 +922,7 @@ exit 1
 | 5 | "把这段周报翻译成英文" | 写作 Subagent | 翻译 + 保持格式 | 5-10s |
 | 6 | "明天上午10点提醒我提交 HICOOL 代码" | 记忆 Subagent | 提醒设置 | <1s |
 | 7 | "讲个笑话放松一下" | 闲聊 Subagent | 轻量直回 | 1-3s |
-| 8 | "帮我查一下当前目录下有哪些 Python 文件" | Bash Subagent | 命令行安全执行 | <1s |
+| 8 | "明天下午3点开产品评审会，帮我加到日程" | 日程与任务 Subagent | 自然语言创建日程 | <1s |
 | 9 | "关于量子计算你怎么看" | 上游 LLM | 通用推理兜底 | 15-40s |
 
 ### 10.2 进化演示（"第二天"环节）
@@ -945,7 +973,7 @@ exit 1
   ├── rag_engine.py (ingest + search + status)
   ├── memory_engine.py (remember + recall + set_reminder)
   ├── writing_engine.py (generate + polish + translate)
-  ├── bash_engine.py (exec + spawn + status)
+  ├── schedule_engine.py (create_event + query + create_task + list_tasks + complete_task)
   └── chat_engine.py (chat)
 □ 配置 Hermes -> MTClaw 联通
 □ 端到端验证：单轮对话 5 种领域路由
@@ -996,7 +1024,7 @@ exit 1
 - [ ] 闲聊 Subagent 走路由模型直回，延迟 < 3s [目标]
 - [ ] RAG 检索本地 ChromaDB，延迟 < 3s [目标]
 - [ ] 记忆 Subagent 本地 SQLite 查询，延迟 < 1s [目标]
-- [ ] Bash Subagent 命令执行延迟 < 2s（常规命令）[目标]
+- [ ] 日程与任务 Subagent 查询延迟 < 500ms [目标]
 - [ ] 路由决策本身延迟 < 1s [目标]
 - [ ] Completion Check 命中率 > 70% [目标]
 - [ ] MTClaw 加速比 4.99x~6.85x [实测，系统控制垂域]
@@ -1060,12 +1088,14 @@ exit 1
 | `writing_generate` | 写作 | 6 (doc_type, topic, key_points, style, length) | 是 | 否 |
 | `writing_polish` | 写作 | 3 (text, goal, target_language) | 是 | 否 |
 | `writing_translate` | 写作 | 4 (text, source_lang, target_lang, keep_formatting) | 是 | 否 |
-| `bash_exec` | Shell | 3 (command, workdir, timeout) | 否 | 否 |
-| `bash_spawn` | Shell | 3 (command, workdir, label) | 否 | 是 |
-| `bash_status` | Shell | 1 (label) | 否 | 否 |
+| `schedule_create_event` | 日程与任务 | 6 (title, start_time, end_time, location, category, reminder_minutes) | 否 | 是 |
+| `schedule_query` | 日程与任务 | 3 (time_range, category, status) | 否 | 否 |
+| `schedule_create_task` | 日程与任务 | 5 (title, priority, due_date, tags, description) | 否 | 是 |
+| `schedule_list_tasks` | 日程与任务 | 3 (status, priority, tags) | 否 | 否 |
+| `schedule_complete_task` | 日程与任务 | 1 (task_id) | 否 | 是 |
 | `chat_light` | 闲聊 | 2 (mood, memory_inject) | 否 | 否 |
 
-**工具总数**：13（含 5 个 MTClaw builtin tools 则共 18 个）
+**工具总数**：15（含 5 个 MTClaw builtin tools 则共 20 个）
 
 ## 附录 B：关键依赖版本
 
@@ -1082,7 +1112,7 @@ exit 1
 
 ## 附录 C：安全注意事项
 
-1. **Bash 命令安全**：白名单 + 黑名单双重校验，禁止 rm -rf / / dd / mkfs / shutdown / reboot / fork bomb
+1. **日程输入校验**：SQLite 参数化查询防止 SQL 注入，时间解析失败时返回友好错误
 2. **文件访问控制**：RAG ingest 仅读取，不做任何写入或执行
 3. **API Key 保护**：配置文件中的密钥使用 `${ENV_VAR}` 引用，不直接存储明文
 4. **数据隐私**：所有数据存储于本地 `~/.prometheus/data/`，不上传云端

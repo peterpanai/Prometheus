@@ -743,10 +743,14 @@ prometheus/                          # Git 仓库根目录
 │
 ├── demo/                            # 演示相关
 │   ├── demo_script.md               # 演示剧本
+│   ├── run_demo.sh                  # 一键演示脚本
 │   └── sample_data/                 # 预置样本数据
 │       ├── sample_notes/            # 模拟个人笔记
 │       ├── sample_data.csv          # 模拟数据文件
 │       └── sample_weekly_report.md  # 模拟周报
+│
+├── dashboard/                       # 路由追踪面板
+│   └── route_tracer.html            # 轻量路由追踪（单文件，轮询 API）
 │
 └── docs/                            # 文档
     ├── spec.md                      # 本规格文档
@@ -905,11 +909,14 @@ exit 1
 
 ### 10.3 路由追踪展示
 
-演示时在终端展示路由决策：
+演示时双屏展示：
 
-```bash
-curl -s http://127.0.0.1:18790/v1/tool_history?limit=1 | jq
 ```
+左屏: Hermes 对话窗口
+右屏: 路由追踪面板（route_tracer.html 实时刷新）
+```
+
+路由追踪面板通过轮询 `/v1/tool_history` API 展示路由决策链路：
 
 ```json
 {
@@ -921,6 +928,8 @@ curl -s http://127.0.0.1:18790/v1/tool_history?limit=1 | jq
   "status": "task_complete"
 }
 ```
+
+颜色标记：绿(TASK_COMPLETE) / 黄(TASK_INCOMPLETE) / 红(错误)，帮助评委直观理解 Router 分发逻辑。
 
 ---
 

@@ -42,6 +42,7 @@
 | **分治原则** | 一个 Subagent 只做一件事，做到极致 | 避免巨型 Prompt 导致延迟高、幻觉多 |
 | **诚实原则** | 所有性能数字必须有实测来源，不编造 | 避免推测数字被评委追问翻车 |
 | **演示优先** | 每个功能必须在演示中可跑通 | 避免做了一堆功能但演示翻车 |
+| **源码合入** | Subagent 代码合入 MTClaw 仓库，用 MTClaw 自带安装脚本 | 避免独立维护一套安装/配置体系 |
 
 ### 1.3 v3.0 重大变更说明
 
@@ -62,6 +63,7 @@
 | **商业价值扩写为 8 个子节** | **对齐赛题"生态和商业价值"6 个子维度** | **真实场景/产品化/商业模式/生态适配/可复用/示范带动** |
 | **加分项对齐赛题原文** | **赛题明确列出 3 个加分项** | **Router 自学习 + 可视化路由追踪 + 开箱即用** |
 | **评分矩阵对齐赛题维度** | **赛题原文评分维度** | **快/准/狠/生态商业价值/加分项** |
+| **从"无损接入"改为"源码合入 MTClaw"** | **官方希望最终代码提交到 MTClaw 开源仓库** | **用 MTClaw 自带安装脚本一键安装，不独立维护安装体系** |
 
 ### 1.4 架构总览
 
@@ -949,14 +951,50 @@ RAG 典型流程:
 
 ## 7. 产品化完成度
 
-### 7.1 一键安装
+### 7.1 源码合入 MTClaw + 一键安装
+
+**v3.0 关键变更**：从"独立项目 + 无损接入"改为"源码合入 MTClaw 仓库"。
+
+```
+代码组织方式:
+  MTClaw 仓库（https://github.com/MooreThreads/MTClaw）
+  ├── function_router/          # MTClaw 核心（已有）
+  ├── examples/                 # MTClaw 原有示例（已有）
+  ├── subagents/                # Prometheus 新增目录
+  │   ├── rag/                  # RAG 知识库 Subagent
+  │   │   ├── functions.jsonl   # 工具定义
+  │   │   ├── scripts/          # wrapper 脚本
+  │   │   └── engine.py         # Python 引擎
+  │   ├── memory/               # 记忆与偏好 Subagent
+  │   ├── writing/              # 写作润色翻译 Subagent
+  │   ├── schedule/             # 日程与任务 Subagent
+  │   └── chat/                 # 闲聊陪伴 Subagent
+  ├── templates/                # 写作模板
+  ├── dashboard/                # 路由追踪面板
+  └── install/                  # MTClaw 自带安装脚本（扩展）
+```
+
+**安装方式**（使用 MTClaw 自带安装脚本）：
 
 ```bash
-git clone xxx && cd prometheus && ./install/install.sh
-# 交互式输入路由模型/上游模型 URL + Key（6 个配置项）
+# 方式 1：从 MTClaw 仓库安装（推荐）
+git clone https://github.com/MooreThreads/MTClaw.git
+cd MTClaw
+./install.sh
+# 交互式输入路由模型/上游模型 URL + Key
 # 自动完成：Python 依赖安装 -> 目录创建 -> DB 初始化 -> cron 设置 -> 服务启动
 # 安装时间 < 5 分钟 [目标]
+
+# 方式 2：HICOOL 评委设备上的安装
+# 赛事方提供 10 台 AIBOOK 设备
+# 评委 clone 代码 -> ./install.sh -> 立即可用
 ```
+
+**优势**：
+- 不需要独立维护一套安装/配置体系
+- 与 MTClaw 生态深度协同（赛题加分项"生态适配价值"）
+- 评委熟悉 MTClaw 的安装流程，降低上手门槛
+- Subagent 代码合入 MTClaw 仓库后，社区可以直接使用和贡献
 
 ### 7.2 预置样本数据
 
@@ -1068,9 +1106,10 @@ demo 阶段（当前）:
 
 ```
 与 MTClaw 生态协同:
-  ├── Prometheus 是 MTClaw 的上层应用（FR 零代码侵入）
+  ├── Prometheus 代码直接合入 MTClaw 仓库（subagents/ 目录）
+  ├── 使用 MTClaw 自带安装脚本一键安装
   ├── 验证了 MTClaw 在非编程场景的通用性
-  └── 为 MTClaw 贡献 5 个垂类 Subagent 示例
+  └── 为 MTClaw 贡献 5 个垂类 Subagent + 即时偏好引擎
 
 与 MTT AIBOOK 生态协同:
   ├── 利用 AIBOOK 本地算力（路由模型 + 嵌入模型）
@@ -1087,10 +1126,10 @@ demo 阶段（当前）:
 
 ```
 Subagent 可复用:
-  ├── 每个 Subagent 独立目录（plugin.json + functions.jsonl + scripts/ + engine.py）
+  ├── 每个 Subagent 独立目录（functions.jsonl + scripts/ + engine.py）
   ├── 标准 stdin JSON -> stdout JSON 接口
-  ├── 可直接移植到其他 MTClaw 项目
-  └── 社区可按标准格式贡献新 Subagent
+  ├── 合入 MTClaw 仓库后社区可直接使用
+  └── 按标准格式贡献新 Subagent（放入 subagents/ 目录即可）
 
 路由策略可复用:
   ├── 路由优先级 + 关键词匹配 + 防误判规则
@@ -1106,7 +1145,7 @@ Subagent 可复用:
   ├── 金融: 行情查询 Subagent + 投资分析 Subagent
   ├── 教育: 题目讲解 Subagent + 学习计划 Subagent
   ├── 医疗: 症状自查 Subagent + 用药提醒 Subagent
-  └── 只需按标准格式开发新 Subagent，无需修改核心
+  └── 只需按标准格式开发新 Subagent，放入 subagents/ 目录即可
 ```
 
 ### 8.6 示范带动作用
@@ -1114,7 +1153,7 @@ Subagent 可复用:
 ```
 作为 MTClaw 优秀案例:
   ├── 展示 MTClaw 在非编程场景的应用潜力
-  ├── 提供 5 个可参考的 Subagent 实现模板
+  ├── 提供 5 个可参考的 Subagent 实现模板（合入 MTClaw 仓库）
   ├── 验证 Function Router 在 15 工具场景下的路由准确率
   └── 为后续参赛者/开发者提供参考
 
@@ -1122,7 +1161,7 @@ Subagent 可复用:
   ├── Subagent 标准格式 -> 社区可以贡献更多垂类
   ├── 即时偏好引擎 -> 可移植到其他 Agent 框架
   ├── 路由准确率测试套件 -> 为 MTClaw 生态提供评测标准
-  └── 一键安装方案 -> 降低 MTClaw 上手门槛
+  └── 源码合入 MTClaw -> 降低社区使用门槛，直接 clone 即用
 ```
 
 ### 8.7 差异化定位
@@ -1203,20 +1242,22 @@ route_tracer.html（~200 行单文件）
   -> 评委可以同时看到对话和路由决策过程
 ```
 
-### 9.3 开箱即用：MTT AIBOOK 一键安装包
+### 9.3 开箱即用：源码合入 MTClaw，自带安装脚本一键安装
 
 **对应赛题加分项**："开箱即用：提供 MTT AIBOOK 一键安装包，含预置 Subagent 市场"
 
-一键安装 + 预置数据即为实现：
+**v3.0 关键变更**：代码合入 MTClaw 仓库，使用 MTClaw 自带安装脚本：
 
 ```
-git clone xxx && cd prometheus && ./install/install.sh
+git clone https://github.com/MooreThreads/MTClaw.git
+cd MTClaw
+./install.sh
 # 交互式输入路由模型/上游模型 URL + Key
 # 自动完成: 依赖安装 -> 目录创建 -> DB 初始化 -> cron 设置 -> 服务启动
 # 安装时间 < 5 分钟 [目标]
 
-预置内容:
-  ├── 5 个 Subagent（RAG/记忆/写作/Bash/闲聊）
+预置内容（合入 MTClaw 仓库的 subagents/ 目录）:
+  ├── 5 个 Subagent（RAG/记忆/写作/日程与任务/闲聊）
   ├── 7 个写作模板（周报/邮件/技术文档/会议纪要/文章/PPT大纲）
   ├── 3 类样本数据（笔记/CSV/周报范例）
   ├── 路由追踪面板（route_tracer.html）
@@ -1297,4 +1338,4 @@ git clone xxx && cd prometheus && ./install/install.sh
 | 安全 | 通用沙箱 | 无 | **输入校验 + 参数化查询 + 文件权限** |
 | 数据隐私 | 云端 | 混合 | **全本地存储** |
 | 可观测性 | 无 | 日志 | **tool_history API + 路由追踪面板** |
-| 部署 | SaaS | Docker/源码 | **一键安装** |
+| 部署 | SaaS | Docker/源码 | **源码合入 MTClaw，自带安装脚本** |

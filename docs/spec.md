@@ -64,8 +64,9 @@
 | Subagent 8→5 | 砍掉 WebFetch/WebSearch/DataAnalysis（上游 LLM 兜底覆盖） |
 | 工具数 24→15 | 回到 LLM function calling 准确率最佳范围 |
 | 反思引擎→即时偏好引擎 | 同步偏好提取，不依赖 cron，演示可跑通 |
-| 砍掉插件系统/知识图谱/Web UI/fallback 链 | 聚焦核心，确保 7 周交付 |
-| 所有数字标注来源 | [实测] / [目标] / [推测] 三级分类 |
+| 砍掉插件系统/知识图谱/Web UI/fallback 链 | 聚焦核心，确保 7 周交付 | |
+| 从"无损接入"改为"源码合入 MTClaw" | 官方希望最终代码提交到 MTClaw 开源仓库 | 用 MTClaw 自带安装脚本一键安装 |
+| 所有数字标注来源 | [实测] / [目标] / [推测] 三级分类 | |
 
 ---
 
@@ -695,54 +696,22 @@ def run_daily_maintenance() -> dict
 ## 8. 文件结构
 
 ```
-prometheus/                          # Git 仓库根目录
-├── README.md                        # 项目说明
-├── LICENSE                          # MIT
-├── spec.md                          # 本文档
-├── requirements.txt                 # Python 依赖
-├── pyproject.toml                   # 包配置
-│
-├── function_router/                 # MTClaw 核心（继承 + 扩展）
+MTClaw 仓库（https://github.com/MooreThreads/MTClaw）
+├── function_router/                 # MTClaw 核心（已有）
 │   ├── __init__.py
 │   ├── server.py                    # 主服务
-│   ├── builtin_tools.py             # 内置工具（保留 find/ls/cat/grep/sleep）
+│   ├── builtin_tools.py             # 内置工具（find/ls/cat/grep/sleep）
 │   └── function-builtin.jsonl
 │
-├── prometheus/                      # 普罗米修斯新增模块
-│   ├── __init__.py
-│   ├── engine/
-│   │   ├── __init__.py
-│   │   ├── rag_engine.py            # 文档索引 + 检索
-│   │   ├── memory_engine.py         # 记忆管理 + 交互日志
-│   │   ├── writing_engine.py        # 写作生成 + 润色 + 翻译
-│   │   ├── schedule_engine.py       # 日程管理 + 任务追踪
-│   │   ├── chat_engine.py           # 闲聊直回
-│   │   └── preference_engine.py     # 即时偏好引擎
-│   └── cli/
-│       ├── __init__.py
-│       └── prometheus_cli.py        # 命令行管理工具
-│
-├── config/                          # 预置配置
-│   ├── config.example.json          # 配置模板
-│   ├── functions.jsonl              # 5 个 Subagent 的工具定义（~13 条）
-│   └── system_prompt.txt            # 可配置系统提示词
-│
-├── scripts/                         # Subagent Wrapper 脚本
-│   ├── rag_search.sh
-│   ├── rag_ingest.sh
-│   ├── rag_status.sh
-│   ├── memory_remember.sh
-│   ├── memory_recall.sh
-│   ├── memory_set_reminder.sh
-│   ├── writing_generate.sh
-│   ├── writing_polish.sh
-│   ├── writing_translate.sh
-│   ├── schedule_create_event.sh
-│   ├── schedule_query.sh
-│   ├── schedule_create_task.sh
-│   ├── schedule_list_tasks.sh
-│   ├── schedule_complete_task.sh
-│   └── chat_light.sh
+├── subagents/                       # Prometheus 新增目录
+│   ├── rag/                         # RAG 知识库 Subagent
+│   │   ├── functions.jsonl          # 工具定义
+│   │   ├── scripts/                 # Bash wrapper 脚本
+│   │   └── engine.py                # Python 引擎
+│   ├── memory/                      # 记忆与偏好 Subagent
+│   ├── writing/                     # 写作润色翻译 Subagent
+│   ├── schedule/                    # 日程与任务 Subagent
+│   └── chat/                        # 闲聊陪伴 Subagent
 │
 ├── templates/                       # 写作模板
 │   ├── weekly_report.md
@@ -753,45 +722,60 @@ prometheus/                          # Git 仓库根目录
 │   ├── article.md
 │   └── ppt_outline.md
 │
-├── install/                         # 安装与部署
-│   ├── install.sh                   # 一键安装脚本
-│   ├── uninstall.sh                 # 卸载脚本
-│   └── restart.sh                   # 重启脚本
+├── dashboard/                       # 路由追踪面板
+│   └── route_tracer.html
+│
+├── config/                          # 预置配置
+│   ├── config.example.json
+│   ├── functions.jsonl              # 所有 Subagent 工具定义聚合
+│   └── system_prompt.txt
+│
+├── install/                         # MTClaw 安装脚本（扩展）
+│   ├── install.sh
+│   └── restart.sh
 │
 ├── tests/                           # 测试
-│   ├── __init__.py
-│   ├── test_rag_engine.py
-│   ├── test_memory_engine.py
-│   ├── test_writing_engine.py
-│   ├── test_schedule_engine.py
-│   ├── test_chat_engine.py
-│   ├── test_preference_engine.py
-│   ├── test_routing_accuracy.py     # 路由准确率测试（50 条混合意图）
-│   └── test_integration.py          # 集成测试
+│   ├── test_routing_accuracy.py
+│   └── ...
 │
 ├── demo/                            # 演示相关
-│   ├── demo_script.md               # 演示剧本
-│   ├── run_demo.sh                  # 一键演示脚本
-│   └── sample_data/                 # 预置样本数据
-│       ├── sample_notes/            # 模拟个人笔记
-│       ├── sample_data.csv          # 模拟数据文件
-│       └── sample_weekly_report.md  # 模拟周报
-│
-├── dashboard/                       # 路由追踪面板
-│   └── route_tracer.html            # 轻量路由追踪（单文件，轮询 API）
+│   ├── demo_script.md
+│   ├── run_demo.sh
+│   └── sample_data/
+│       ├── sample_notes/
+│       ├── sample_data.csv
+│       └── sample_weekly_report.md
 │
 └── docs/                            # 文档
-    ├── spec.md                      # 本规格文档
-    ├── design-proposal.md           # 设计方案
-    ├── speed-accuracy-impact.md     # 快准狠分析
-    └── MTClaw-深度调研报告.md
+    ├── spec.md
+    ├── design-proposal.md
+    └── speed-accuracy-impact.md
 ```
 
 ---
 
 ## 9. 安装与部署
 
-### 9.1 依赖清单
+### 9.1 源码合入 MTClaw
+
+**v2.0 关键变更**：代码合入 MTClaw 仓库，使用 MTClaw 自带安装脚本。
+
+```
+代码组织方式:
+  MTClaw 仓库（https://github.com/MooreThreads/MTClaw）
+  ├── function_router/          # MTClaw 核心（已有）
+  ├── subagents/                # Prometheus 新增目录
+  │   ├── rag/                  # RAG 知识库 Subagent
+  │   ├── memory/               # 记忆与偏好 Subagent
+  │   ├── writing/              # 写作润色翻译 Subagent
+  │   ├── schedule/             # 日程与任务 Subagent
+  │   └── chat/                 # 闲聊陪伴 Subagent
+  ├── templates/                # 写作模板
+  ├── dashboard/                # 路由追踪面板
+  └── install/                  # MTClaw 自带安装脚本（扩展）
+```
+
+### 9.2 依赖清单
 
 ```txt
 # requirements.txt
@@ -806,76 +790,19 @@ python-dateparser>=1.2
 pytest>=7.0
 ```
 
-### 9.2 一键安装
+### 9.3 一键安装（使用 MTClaw 自带安装脚本）
 
 ```bash
-#!/bin/bash
-# install/install.sh
-set -euo pipefail
-
-echo "=== 普罗米修斯 Prometheus 安装 ==="
-
-# 1. 检查 Python 版本
-python3 --version | grep -q "3.10\|3.11\|3.12" || {
-    echo "需要 Python 3.10+"; exit 1;
-}
-
-# 2. 安装 Python 依赖
-pip install -r requirements.txt
-pip install -e .
-
-# 3. 创建目录结构
-mkdir -p ~/.prometheus/{data,config,scripts,python_tools,logs,bin,templates}
-
-# 4. 交互式配置
-echo ""
-echo "── 配置路由模型 ──"
-read -r -p "路由模型 base_url: " ROUTING_URL
-read -r -p "路由模型名称: " ROUTING_MODEL
-read -r -p "路由模型 API key: " ROUTING_KEY
-
-echo ""
-echo "── 配置上游模型 ──"
-read -r -p "上游模型 base_url: " UPSTREAM_URL
-read -r -p "上游模型名称: " UPSTREAM_MODEL
-read -r -p "上游模型 API key: " UPSTREAM_KEY
-
-# 5. 写入配置
-cp config/config.example.json ~/.prometheus/config/config.json
-# patch 配置...
-
-# 6. 复制工具定义和脚本
-cp config/functions.jsonl ~/.prometheus/config/functions.jsonl
-cp scripts/*.sh ~/.prometheus/scripts/
-chmod +x ~/.prometheus/scripts/*.sh
-
-# 7. 复制 Python 工具
-cp -r prometheus/ ~/.prometheus/python_tools/
-
-# 8. 复制写作模板
-cp templates/*.md ~/.prometheus/templates/
-
-# 9. 初始化数据库
-python3 -c "
-from prometheus.engine.memory_engine import init_db
-from prometheus.engine.rag_engine import init_chroma
-init_db()
-init_chroma()
-"
-
-# 10. 设置后台维护 cron
-(crontab -l 2>/dev/null; echo "0 2 * * * ~/.prometheus/scripts/preference_loop.sh") | crontab -
-
-# 11. 启动服务
-./install/restart.sh
-
-echo ""
-echo "=== 安装完成 ==="
-echo "健康检查: curl http://127.0.0.1:18790/health"
-echo "已加载工具: curl http://127.0.0.1:18790/v1/tools | jq '.tools | length'"
+# 从 MTClaw 仓库安装
+git clone https://github.com/MooreThreads/MTClaw.git
+cd MTClaw
+./install.sh
+# 交互式输入路由模型/上游模型 URL + Key
+# 自动完成：Python 依赖安装 -> 目录创建 -> DB 初始化 -> cron 设置 -> 服务启动
+# 安装时间 < 5 分钟 [目标]
 ```
 
-### 9.3 服务启动
+### 9.4 服务启动
 
 ```bash
 #!/bin/bash

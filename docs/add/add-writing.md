@@ -1,10 +1,10 @@
 # ADD — 写作润色翻译 Subagent
 
-> 版本：v1.0 | 日期：2026-07-12 | 状态：draft | 插件名：`writing`
+> 版本：v2.0 | 日期：2026-07-12 | 状态：draft | 插件名：`writing`
 
 ## 1. 背景
 
-用户需要场景化的文档生成（周报、邮件、技术文档）、文本润色和多语言翻译。核心能力依赖上游 LLM，Function Router 的价值在于自动注入用户偏好记忆、参数标准化、快速路由。
+用户需要场景化的文档生成（周报、邮件、技术文档）、文本润色、多语言翻译和去AI化改写。核心能力依赖上游 LLM，Function Router 的价值在于自动注入用户偏好记忆、参数标准化、快速路由。v2.0 新增去AI化改写工具（`writing_humanize`）。
 
 ## 2. 调研
 
@@ -67,6 +67,28 @@ writing_generate(doc_type, topic, key_points, style, length) →
 - `style`：枚举 4 种风格（formal/casual/technical/academic），映射到不同的 prompt 指导
 - `length`：枚举 3 种篇幅（short/medium/long），映射到 token 预算
 - `goal`（润色）：枚举 5 种目标（more_professional/more_concise/more_friendly/fix_grammar/more_technical）
+- `intensity`（去AI化）：枚举 3 种强度（light/medium/heavy）
+
+### 3.4 去AI化改写机制（v2.0 新增）
+
+```
+writing_humanize(text, intensity="medium", preserve_formatting=true) ->
+  1. AI 痕迹识别:
+     - 过度对称句式（"不仅...而且..." / "既...又..."）
+     - 套话和空泛表达（"在当今时代" / "随着...的发展"）
+     - 逻辑连接词堆砌（"首先...其次...最后..."）
+     - 过度礼貌和平衡表达（"虽然...但是..." 万能句式）
+     - 机械式总分总结构
+     - 标点使用模式（过度使用破折号、分号）
+  2. 构造改写 prompt（含 intensity 级别）
+  3. 调用上游 LLM 改写
+  4. 返回 {humanized, changes_summary}
+
+intensity 级别:
+  light  - 仅去除明显套话，保留原文风格
+  medium - 重写句式结构，提升自然度
+  heavy  - 全面改写，保留核心信息但完全改变表达方式
+```
 
 ## 4. 插件规格
 
@@ -84,12 +106,12 @@ writing_generate(doc_type, topic, key_points, style, length) →
     "packages": []
   },
   "provides": {
-    "tools": ["writing_generate", "writing_polish", "writing_translate"],
+    "tools": ["writing_generate", "writing_polish", "writing_translate", "writing_humanize"],
     "engines": ["writing_engine.py"]
   },
   "routing": {
-    "trigger_keywords": ["帮我写", "生成", "起草", "润色", "翻译", "优化", "translate"],
-    "trigger_patterns": ["帮我写.*", "生成一份.*", "起草.*", "翻译.*", "润色.*"],
+    "trigger_keywords": ["帮我写", "生成", "起草", "润色", "翻译", "优化", "去AI", "去AI化", "translate"],
+    "trigger_patterns": ["帮我写.*", "生成一份.*", "起草.*", "翻译.*", "润色.*", "去.*AI.*"],
     "match_priority": "normal"
   }
 }
@@ -97,7 +119,7 @@ writing_generate(doc_type, topic, key_points, style, length) →
 
 ### 4.2 工具定义
 
-见 `spec.md` §3.3，3 个工具：`writing_generate`、`writing_polish`、`writing_translate`。
+见 `spec.md` §3.3，4 个工具：`writing_generate`、`writing_polish`、`writing_translate`、`writing_humanize`。
 
 ### 4.3 Python 引擎接口
 
@@ -109,6 +131,8 @@ def polish(text: str, goal: str, target_language: str,
            upstream_url: str, upstream_model: str, upstream_key: str) -> dict
 def translate(text: str, source_lang: str, target_lang: str, keep_formatting: bool,
               upstream_url: str, upstream_model: str, upstream_key: str) -> dict
+def humanize(text: str, intensity: str = "medium", preserve_formatting: bool = True,
+             upstream_url: str, upstream_model: str, upstream_key: str) -> dict
 ```
 
 ## 5. 实现 Checklist
@@ -131,23 +155,26 @@ def translate(text: str, source_lang: str, target_lang: str, keep_formatting: bo
 - [ ] WRT-011 实现 prompt 构造（system: 模板 + 偏好 + 指导, user: 参数）
 - [ ] WRT-012 实现上游 LLM 调用（httpx → OpenAI-compatible API）
 - [ ] WRT-013 实现 `polish()` — 润色 prompt 模板 + 偏好注入
-- [ ] WRT-014 实现 `translate()` — 翻译 prompt 模板 + 格式保持
+- [ ] WRT-014 实现 `translate()` - 翻译 prompt 模板 + 格式保持
 - [ ] WRT-015 实现 `changes_summary` 生成（润色前后 diff 摘要）
+- [ ] WRT-016 实现 `humanize()` - AI痕迹识别 + 三级强度改写 prompt 模板
 
 ### Wrapper 脚本
 
-- [ ] WRT-016 编写 `writing_generate.sh`
-- [ ] WRT-017 编写 `writing_polish.sh`
-- [ ] WRT-018 编写 `writing_translate.sh`
+- [ ] WRT-017 编写 `writing_generate.sh`
+- [ ] WRT-018 编写 `writing_polish.sh`
+- [ ] WRT-019 编写 `writing_translate.sh`
+- [ ] WRT-020 编写 `writing_humanize.sh`
 
 ### 测试
 
 - [ ] WRT-019 单元测试：模板渲染正确性
 - [ ] WRT-020 单元测试：prompt 构造（偏好注入验证）
-- [ ] WRT-021 集成测试：generate → 格式符合偏好
-- [ ] WRT-022 集成测试：translate → 格式保持
-- [ ] WRT-023 集成测试：polish → goal 匹配
-- [ ] WRT-024 集成测试：上游 LLM 不可用时的降级处理
+- [ ] WRT-021 集成测试：generate -> 格式符合偏好
+- [ ] WRT-022 集成测试：translate -> 格式保持
+- [ ] WRT-023 集成测试：polish -> goal 匹配
+- [ ] WRT-024 集成测试：humanize -> 去AI化效果（三级强度对比）
+- [ ] WRT-025 集成测试：上游 LLM 不可用时的降级处理
 
 ## 6. 参考
 

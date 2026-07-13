@@ -1,6 +1,6 @@
 # Prometheus 实现 Checklist
 
-> 最后更新：2026-07-13
+> 最后更新：2026-07-14
 > 统一进度追踪文件。所有 Subagent 的实现任务汇总在此。
 > 详细设计见 `docs/add/` 下各 ADD 文档。
 
@@ -8,16 +8,18 @@
 
 ## 总览
 
-| Subagent | 任务数 | 已完成 | 进行中 | 未开始 | 完成率 |
-|----------|--------|--------|--------|--------|--------|
-| RAG 知识库 | 25 | 0 | 0 | 25 | 0% |
+| Subagent / 模块 | 任务数 | 已完成 | 进行中 | 未开始 | 完成率 |
+|----------------|--------|--------|--------|--------|--------|
+| RAG 知识库 | 24 | 0 | 0 | 24 | 0% |
 | 记忆与偏好 | 31 | 0 | 0 | 31 | 0% |
-| 写作润色翻译 | 25 | 0 | 0 | 25 | 0% |
+| 写作润色翻译 | 27 | 0 | 0 | 27 | 0% |
 | 日程与任务 | 33 | 0 | 0 | 33 | 0% |
 | 闲聊陪伴 | 15 | 0 | 0 | 15 | 0% |
-| 即时偏好引擎 | 6 | 0 | 0 | 6 | 0% |
+| Router 自学习引擎 | 46 | 0 | 0 | 46 | 0% |
+| 即时偏好引擎（辅助） | 6 | 0 | 0 | 6 | 0% |
+| Subagent 市场 | 40 | 0 | 0 | 40 | 0% |
 | 系统集成 | 12 | 0 | 0 | 12 | 0% |
-| **合计** | **147** | **0** | **0** | **147** | **0%** |
+| **合计** | **234** | **0** | **0** | **234** | **0%** |
 
 ---
 
@@ -256,15 +258,91 @@
 
 ---
 
-## 6. 即时偏好引擎（跨 Subagent）
+## 6. Router 自学习引擎（跨 Subagent，赛题加分项核心）
+
+详细设计：`docs/add/add-router-learning.md`
+
+### 数据层
+
+- [ ] RL-001 创建 SQLite 表 `routing_decisions`（id, timestamp, session_id, user_input, input_features, top1_route, top1_confidence, top2_route, top2_confidence, final_route, routing_layer, correction_type）
+- [ ] RL-002 创建 SQLite 表 `routing_corrections`（id, decision_id, original_route, corrected_route, correction_type, applied_adjustments）
+- [ ] RL-003 创建 SQLite 表 `routing_keyword_weights`（keyword, subagent, weight, hit_count, last_updated）
+- [ ] RL-004 创建 SQLite 表 `routing_prompt_fragments`（pattern_hash, fragment_text, hit_count, created_at, last_used）
+- [ ] RL-005 创建 SQLite 表 `subagent_priority`（subagent, base_priority, dynamic_adjustment, last_updated）
+- [ ] RL-006 创建 SQLite 表 `routing_thresholds`（threshold_name, value, last_calibrated, calibration_reason）
+- [ ] RL-007 创建索引（timestamp / session_id / corrected_route）
+
+### 置信度评分
+
+- [ ] RL-008 实现 `score_confidence()` - 从路由模型 logprob 计算置信度
+- [ ] RL-009 实现简化方案（logprob 不可用时，用 top-1 单一概率）
+- [ ] RL-010 实现置信度阈值配置加载（high=0.75, low=0.45）
+
+### 双层路由
+
+- [ ] RL-011 实现 `decide_route_layer()` - 路由层级决策（L1_auto / L1_low_confidence / L2_confirm）
+- [ ] RL-012 实现 `generate_clarification()` - 澄清问题生成（基于 top-2 候选）
+- [ ] RL-013 实现 Subagent user_friendly_name 映射（rag_search -> "查文档" 等）
+- [ ] RL-014 实现 L2 确认路由的交互流程（多轮对话）
+- [ ] RL-015 实现"用户连续 3 次弃权"的处理（默认走 top-1 + 标记）
+
+### 用户修正反馈
+
+- [ ] RL-016 实现 `detect_correction()` - 纠正意图识别（4 种模式："不是...我是要" / "不对...我要" / "我说的是...不是" / "错了...应该"）
+- [ ] RL-017 实现 `record_routing_decision()` - 路由决策记录
+- [ ] RL-018 实现 `record_correction()` - 修正记录
+- [ ] RL-019 实现 input_features 提取（关键词 / 长度 / 路径 / 技术名词检测）
+
+### 路由策略动态调整
+
+- [ ] RL-020 实现 `adjust_keyword_weights()` - 关键词权重调整（同类修正 ≥ 2 次触发）
+- [ ] RL-021 实现 `update_prompt_fragments()` - 提示词片段更新（累积 ≥ 3 次触发）
+- [ ] RL-022 实现 `adjust_subagent_priority()` - 优先级调整（50 次窗口统计）
+- [ ] RL-023 实现 `calibrate_thresholds()` - 阈值校准（每日 cron + ≥ 10 次修正）
+- [ ] RL-024 实现 `build_dynamic_routing_prompt()` - 动态提示词构造（基础 + 权重 + 片段 top 5）
+
+### MTClaw FR 集成
+
+- [ ] RL-025 扩展 MTClaw FR：路由前加载动态提示词
+- [ ] RL-026 扩展 MTClaw FR：路由调用时启用 logprobs=true
+- [ ] RL-027 扩展 MTClaw FR：路由后置信度评估 + 双层路由
+- [ ] RL-028 扩展 MTClaw FR：路由决策记录
+- [ ] RL-029 扩展 MTClaw FR：修正检测 + 策略调整触发
+
+### CLI
+
+- [ ] RL-030 实现 `prometheus router stats` - 查看自学习状态
+- [ ] RL-031 实现 `prometheus router reset` - 重置学习数据
+- [ ] RL-032 实现 `prometheus router learning on/off` - 开关自学习
+- [ ] RL-033 实现 `prometheus router export <path>` - 导出学习数据
+- [ ] RL-034 实现 `prometheus router calibrate` - 手动触发阈值校准
+
+### 测试
+
+- [ ] RL-035 单元测试：置信度计算（logprob 输入 -> 置信度，误差 < 0.02）
+- [ ] RL-036 单元测试：路由层级决策（3 个阈值区间）
+- [ ] RL-037 单元测试：澄清问题生成（top-2 候选）
+- [ ] RL-038 单元测试：纠正意图识别（4 种模式）
+- [ ] RL-039 单元测试：input_features 提取
+- [ ] RL-040 集成测试：L2 确认路由端到端
+- [ ] RL-041 集成测试：修正触发关键词权重调整
+- [ ] RL-042 集成测试：修正触发提示词片段更新
+- [ ] RL-043 集成测试：优先级统计调整
+- [ ] RL-044 集成测试：阈值校准（高置信度被修正率驱动）
+- [ ] RL-045 集成测试：动态提示词构造（基础 + 权重 + 片段）
+- [ ] RL-046 演示验证：5 轮进化剧本（误判 -> 修正 -> 自动正确路由）
+
+---
+
+## 6.5 即时偏好引擎（辅助机制）
 
 详细设计：`docs/add/add-memory.md` §3.2
 
-- [ ] PREF-001 实现 `detect_and_store_preference()` - 即时偏好检测 + 同步写入
+- [ ] PREF-001 实现 `detect_and_store_preference()` - 即时偏好检测 + 同步写入（"以后都"/"我喜欢"/"记住了"/"不要"/"总是"）
 - [ ] PREF-002 实现 `compute_interaction_stats()` - Subagent 频次/关键词统计
 - [ ] PREF-003 实现记忆衰减/强化逻辑（access_count + 时间规则）
-- [ ] PREF-004 实现即时偏好注入（请求前自动注入）
-- [ ] PREF-005 实现 cron 定时维护任务（轻量版）
+- [ ] PREF-004 实现即时偏好注入（请求前自动注入到 Subagent 的内容生成 prompt）
+- [ ] PREF-005 实现 cron 定时维护任务（轻量版，每日凌晨 2:00）
 - [ ] PREF-006 测试：跨会话偏好注入 [目标: 第 2 轮自动注入率 >90%]
 
 ---
@@ -273,13 +351,80 @@
 
 - [ ] SYS-001 合入 MTClaw 仓库 subagents/ 目录结构
 - [ ] SYS-002 扩展 MTClaw install.sh（支持 Prometheus Subagent 安装）
-- [ ] SYS-003 聚合 functions.jsonl（5 Subagent 工具定义合并）
-- [ ] SYS-004 配置路由模型 + 上游模型
+- [ ] SYS-003 聚合 functions.jsonl（由市场机制负责，详见 §8 MKT-027/028）
+- [ ] SYS-004 配置路由模型 + 上游模型（路由模型启用 logprobs=true）
 - [ ] SYS-005 端到端验证：单轮对话 5 种领域路由
 - [ ] SYS-006 路由准确率测试套件（50 条混合意图）
-- [ ] SYS-007 路由追踪面板 route_tracer.html
-- [ ] SYS-008 演示剧本排练（10 轮连续对话 + 进化演示）
+- [ ] SYS-007 路由追踪面板 route_tracer.html（含置信度/修正历史展示）
+- [ ] SYS-008 演示剧本排练（10 轮连续对话 + 5 轮进化演示 + 市场演示）
 - [ ] SYS-009 样本数据准备（笔记/CSV/周报范例）
 - [ ] SYS-010 写作模板创建（7 个）
 - [ ] SYS-011 一键安装流程验证
 - [ ] SYS-012 演示录屏备份
+
+---
+
+## 8. Subagent 市场（赛题加分项）
+
+详细设计：`docs/add/add-market.md`
+
+### 数据层
+
+- [ ] MKT-001 定义 `subagent.json` schema（JSON Schema）
+- [ ] MKT-002 定义 `registry.json` schema
+- [ ] MKT-003 创建 `installed_subagents.json` 本地状态文件
+- [ ] MKT-004 创建 `registry_cache.json` 缓存机制
+
+### Registry
+
+- [ ] MKT-005 创建 `subagents/registry.json` 索引文件（5 个官方条目）
+- [ ] MKT-006 实现 `fetch_registry()` - 带缓存的远程索引拉取
+- [ ] MKT-007 实现缓存 TTL 机制（默认 24 小时）
+- [ ] MKT-008 实现离线降级（缓存过期但网络不可用时，使用旧缓存）
+
+### CLI
+
+- [ ] MKT-009 实现 `prometheus market list` - 列出所有 Subagent
+- [ ] MKT-010 实现 `prometheus market list --category` / `--source` 过滤
+- [ ] MKT-011 实现 `prometheus market info <name>` - 详情展示
+- [ ] MKT-012 实现 `prometheus market search <keyword>` - 关键词搜索
+- [ ] MKT-013 实现 `prometheus market install <name>` - 安装流程
+- [ ] MKT-014 实现 `prometheus market install <name>@version` - 指定版本
+- [ ] MKT-015 实现 `prometheus market remove <name>` - 卸载流程
+- [ ] MKT-016 实现 `prometheus market update <name>` - 更新流程
+- [ ] MKT-017 实现 `prometheus market update --all` - 批量更新
+- [ ] MKT-018 实现 `prometheus market installed` - 已安装列表
+- [ ] MKT-019 实现 `prometheus market outdated` - 可更新列表
+- [ ] MKT-020 实现 `prometheus market refresh` - 刷新缓存
+
+### 安装/卸载引擎
+
+- [ ] MKT-021 实现 `validate_manifest()` - subagent.json 校验
+- [ ] MKT-022 实现 `install_subagent()` - 完整安装流程（下载 + 校验 + 依赖 + 注册 + 重载）
+- [ ] MKT-023 实现 `remove_subagent()` - 完整卸载流程
+- [ ] MKT-024 实现官方预置保护（不允许卸载官方 Subagent）
+- [ ] MKT-025 实现依赖检查与安装（Python pip + 系统依赖提示）
+- [ ] MKT-026 实现兼容性检查（MTClaw / AIOS 版本）
+
+### FR 集成
+
+- [ ] MKT-027 实现 `merge_functions_jsonl()` - 工具定义合并
+- [ ] MKT-028 实现 `unmerge_functions_jsonl()` - 工具定义反注册
+- [ ] MKT-029 实现 FR 启动时扫描已安装 Subagent
+- [ ] MKT-030 实现 FR 热重载 API（`POST /v1/reload`）
+- [ ] MKT-031 实现 FR 热重载不中断现有连接
+
+### 演示与文档
+
+- [ ] MKT-032 准备 1-2 个社区示例 Subagent（weather / finance）用于演示
+- [ ] MKT-033 编写社区贡献指南（subagent.json 规范 + PR 流程）
+- [ ] MKT-034 演示剧本：market list / install / remove 完整流程
+
+### 测试
+
+- [ ] MKT-035 单元测试：subagent.json 校验（合法/非法格式）
+- [ ] MKT-036 单元测试：registry 缓存机制
+- [ ] MKT-037 集成测试：install -> list installed -> remove 端到端
+- [ ] MKT-038 集成测试：FR 热重载（安装后立即可用）
+- [ ] MKT-039 集成测试：官方预置保护
+- [ ] MKT-040 集成测试：离线模式（缓存可用，远程不可达）

@@ -1,7 +1,7 @@
 # 普罗米修斯（Prometheus）设计方案
 
 > 基于 MTClaw Function Router 的自我进化型个人认知智能体  
-> 版本：v3.0 | 日期：2026-07-12 | 目标：HICOOL 智能体赛道
+> 版本：v3.1 | 日期：2026-07-14 | 目标：HICOOL 智能体赛道
 
 ---
 
@@ -14,7 +14,7 @@
    - 2.3 [写作润色翻译 Subagent](#23-写作润色翻译-subagent)
    - 2.4 [日程与任务 Subagent](#24-日程与任务-subagent)
    - 2.5 [闲聊陪伴 Subagent](#25-闲聊陪伴-subagent)
-   - 2.6 [即时偏好引擎](#26-即时偏好引擎)
+   - 2.6 [Router 自学习引擎](#26-router-自学习引擎)
    - 2.7 [Subagent 协同机制](#27-subagent-协同机制)
 3. [快：速度优势](#3-快速度优势)
 4. [准：准确率优势](#4-准准确率优势)
@@ -44,28 +44,7 @@
 | **演示优先** | 每个功能必须在演示中可跑通 | 避免做了一堆功能但演示翻车 |
 | **源码合入** | Subagent 代码合入 MTClaw 仓库，用 MTClaw 自带安装脚本 | 避免独立维护一套安装/配置体系 |
 
-### 1.3 v3.0 重大变更说明
-
-相比 v2.0，本次修订的核心变更：
-
-| 变更 | 原因 | 影响 |
-|------|------|------|
-| Subagent 从 8 个缩减到 5 个，再调整为 5 个（砍 Bash 换日程与任务） | 砍掉 WebFetch/WebSearch/DataAnalysis（上游 LLM 兜底覆盖）；砍掉 Bash（赛题不面向开发者，MTClaw builtin 已覆盖文件操作）；新增日程与任务（赛题推荐方向，面向知识工作者） | 工具数从 24 降到 15，路由准确率提升 |
-| 砍掉插件系统 | 比赛不需要，直接写死配置 | 省 1 周开发时间 |
-| 砍掉知识图谱 | 小数据量上无实际价值 | 省 3-5 天 |
-| 砍掉模型 fallback 链 | 比赛环境不会挂 | 省 2 天 |
-| 砍掉上下文压缩器 | MTClaw 已有 fr_context_history | 省 2-3 天 |
-| 砍掉多搜索后端 fallback | DuckDuckGo 够用 | 省 2 天 |
-| 反思引擎改为即时偏好引擎 | 演示中能即时展示"进化"效果 | 演示可跑通 |
-| 所有性能数字标注来源 | 诚实化，区分"实测"和"目标" | 应对评委追问 |
-| 工具数控制在 15 个以内 | LLM function calling 在 <15 工具时准确率最高 | 路由更准 |
-| **加回轻量路由追踪面板** | **赛题加分项明确要求"可视化路由追踪"** | **单 HTML 文件 + 轮询 API，1 天开发量** |
-| **商业价值扩写为 8 个子节** | **对齐赛题"生态和商业价值"6 个子维度** | **真实场景/产品化/商业模式/生态适配/可复用/示范带动** |
-| **加分项对齐赛题原文** | **赛题明确列出 3 个加分项** | **Router 自学习 + 可视化路由追踪 + 开箱即用** |
-| **评分矩阵对齐赛题维度** | **赛题原文评分维度** | **快/准/狠/生态商业价值/加分项** |
-| **从"无损接入"改为"源码合入 MTClaw"** | **官方希望最终代码提交到 MTClaw 开源仓库** | **用 MTClaw 自带安装脚本一键安装，不独立维护安装体系** |
-
-### 1.4 架构总览
+### 1.3 架构总览
 
 ```
 用户输入
@@ -75,7 +54,13 @@ Hermes Agent ──► MTClaw Function Router (:18790)
                     │
                     ├── 元数据清洗（移除 Hermes sender block 等）
                     ├── 即时偏好注入（memory_recall 自动注入用户画像）
-                    ├── 路由模型判断（5 个 Subagent 工具定义，temperature=0.0）
+                    ├── 动态路由提示词构造（基础 + 关键词权重 + 历史修正示例）
+                    ├── 路由模型判断（5 个 Subagent 工具定义，temperature=0.0, logprobs=true）
+                    │
+                    ├── 置信度评估
+                    │     ├── ≥ 0.75 (高) ─► L1 自动路由
+                    │     ├── 0.45~0.75 (中) ─► L1 自动路由 (标记低置信度)
+                    │     └── < 0.45 (低) ─► L2 确认路由 (主动询问用户)
                     │
                     ├─ rag_*         -> RAG 知识库     (本地 ChromaDB，1-3s)
                     ├─ memory_*      -> 记忆与偏好     (SQLite + ChromaDB，<1s)
@@ -89,12 +74,22 @@ Hermes Agent ──► MTClaw Function Router (:18790)
               ├─ TASK_COMPLETE    -> 直接返回（快路径）
               └─ TASK_INCOMPLETE  -> 转发上游 LLM（慢路径）
 
-即时偏好引擎（前台，同步）:
+              修正检测（用户纠正意图）
+              ├─ 检测到修正 ─► 记录 routing_corrections
+              │                └─ 触发策略调整（关键词权重 / 提示词片段 / 优先级）
+              └─ 无修正 ─► 正常返回
+
+Router 自学习引擎（前台，同步）:
+  第 1 轮: "帮我看看 GPU 算力" -> 置信度 0.42 -> L2 确认 -> 用户选 RAG -> 记录修正
+  第 5 轮: "帮我看看 最新论文" -> 提示词已学习 -> 置信度 0.82 -> L1 自动路由到 RAG
+  -> 展示"根据用户使用习惯动态优化分发策略"
+
+即时偏好引擎（前台，同步，辅助机制）:
   用户说"以后都用 Markdown" -> 实时写入 memory -> 下次请求自动注入
-  不依赖后台 cron，演示中即时可见
+  负责"内容生成偏好"，与 Router 自学习引擎（负责"路由策略"）独立工作
 ```
 
-### 1.5 调研基础
+### 1.4 调研基础
 
 本设计基于对三个主流 AI Agent 代码库的深入调研：
 
@@ -104,7 +99,7 @@ Hermes Agent ──► MTClaw Function Router (:18790)
 | **OpenClaw** | `~/ws/openclaw` | Plugin SDK（definePluginEntry + registerTool）、SSRF 防护 + readability 提取、memory host SDK（query/dream/events）、工具可用性模型（ToolAvailabilitySignal） |
 | **Codex** | `~/ws/codex` | ToolRouter + ToolRegistry 分发、Orchestrator（审批+沙箱+重试分离）、multi_agents V2（spawn/send/wait 原语）、Extension API（tool_contributors） |
 
-### 1.6 数据诚实化声明
+### 1.5 数据诚实化声明
 
 本方案中的性能数据分为三类：
 
@@ -566,87 +561,183 @@ complex 类消息绝对禁止路由到 chat_light：
 
 ---
 
-### 2.6 即时偏好引擎
+### 2.6 Router 自学习引擎
 
 #### 2.6.1 功能定位
 
-v3.0 核心变更：将 v2.0 的"后台反思引擎"改为"即时偏好引擎"。用户声明偏好时实时写入 memory，不依赖后台 cron 任务。这确保在演示中能即时展示"越用越懂你"的效果。
+v3.1 核心变更：将 v3.0 的"即时偏好引擎"升级为"Router 自学习引擎"，真正实现赛题加分项要求的"根据用户使用习惯**动态优化分发策略**"。
 
-#### 2.6.2 触发机制
+v3.0 的即时偏好引擎只是偏好记忆注入（用户说"以后都用 Markdown" -> 写入 memory -> 下次生成时注入 prompt），解决的是"内容生成偏好"问题，**不是路由策略优化**。Router 自学习引擎则通过置信度评分、双层路由、用户修正反馈、路由策略动态调整四个机制，真正优化"用户输入 -> 哪个 Subagent"的分发策略。
 
-| 触发方式 | 频率 | 处理内容 | 实现 |
-|---------|------|---------|------|
-| **即时触发** | 用户说"以后都"/"记住了"/"我喜欢"时 | 偏好声明检测 -> 同步写入 memory | 规则匹配 + memory_remember |
-| 定时任务 | 每日凌晨 2:00 | 记忆衰减/强化 + 交互统计 | cron + Python 脚本 |
-| 手动触发 | 用户主动要求 | "帮我总结一下最近的使用情况" | memory_recall + 统计 |
+即时偏好引擎降级为辅助机制（§2.6.7），仍负责内容生成偏好，与 Router 自学习引擎独立工作。
 
-#### 2.6.3 即时偏好检测（v1）
+详细设计见 `docs/add/add-router-learning.md`。
+
+#### 2.6.2 路由置信度评分
+
+```
+路由模型调用 (temperature=0.0, logprobs=true, top_logprobs=5)
+  │
+  ├── 输出: top-1 工具调用 (如 "rag_search")
+  └── 输出: 候选工具的 logprob 分布
+
+置信度计算:
+  confidence = exp(logprob_top1) / sum(exp(logprob_i))
+
+简化方案 (logprob 不可用时):
+  confidence = exp(logprob_top1)  # 单一 top-1 概率
+```
+
+| 阈值 | 默认值 | 含义 |
+|------|--------|------|
+| `high_threshold` | 0.75 | 高于此值直接自动路由（L1） |
+| `low_threshold` | 0.45 | 低于此值触发用户确认（L2） |
+| 中间区 | 0.45 ~ 0.75 | 默认走 top-1，标记为"低置信度"用于学习 |
+
+#### 2.6.3 双层路由机制
+
+```
+用户输入
+  │
+  ▼
+路由模型 (logprobs=true)
+  │
+  ├── 置信度 ≥ 0.75 (高置信度)
+  │     └── L1 自动路由: 直接路由到 top-1 Subagent
+  │
+  ├── 0.45 ≤ 置信度 < 0.75 (中间区)
+  │     └── L1 自动路由 (默认走 top-1) + 标记 low_confidence=true
+  │         └── 如果用户后续修正, 记录为高价值学习样本
+  │
+  └── 置信度 < 0.45 (低置信度)
+        └── L2 确认路由: 主动询问用户
+              │
+              ├── 系统生成澄清问题:
+              │     "你是想[查文档]还是[闲聊]? (1/2)"
+              │     (基于 top-2 候选 Subagent 生成选项)
+              │
+              ├── 用户选择 -> 路由到用户指定的 Subagent
+              │
+              └── 记录修正 (top-1 -> 用户选择)
+```
+
+**澄清问题生成**：基于 top-2 候选 Subagent 的 `user_friendly_name` 字段生成选项（rag_search -> "查文档"、chat_light -> "闲聊"等）。
+
+**误判保护**：闲聊 Subagent 的 complex 消息禁止规则作为硬约束，优先于置信度判断。即使置信度 ≥ 0.75，如果输入命中 complex 规则（包含文件路径 / 技术术语 / 长消息等），也不会路由到 chat_light。
+
+#### 2.6.4 用户修正反馈
+
+| 修正场景 | 触发方式 | 处理 |
+|---------|---------|------|
+| A. L2 确认后用户选择 | 用户回答澄清问题 | 记录 (top-1 -> 用户选择) |
+| B. L1 路由后用户纠正 | 用户说"不对，我要查文档" | 识别纠正意图 -> 重新路由 -> 记录修正 |
+| C. 用户主动澄清 | 用户说"不是闲聊，我是要..." | 检测澄清意图 -> 重新路由 -> 记录修正 |
+| D. 用户弃权 | L2 连续 3 次不选 | 不记录修正，记录"低置信度弃权"事件 |
+
+**修正记录结构**：
 
 ```python
-def detect_and_store_preference(user_message: str) -> dict | None:
-    """检测用户消息中的偏好声明，实时写入 memory。
-
-    匹配模式: "以后都" / "我喜欢" / "不要" / "偏好" / "总是" / "记住了"
-    例: "以后都用 Markdown 格式" -> {key: "writing_format", value: "markdown"}
-    """
-    patterns = [
-        (r"以后都.*?(用|使用)\s*(.+)", "preference"),
-        (r"我喜欢.*?(用|使用)\s*(.+)", "preference"),
-        (r"记住了.*?(.+)", "preference"),
-        (r"不要.*?(用|使用)\s*(.+)", "preference"),
-        (r"总是.*?(.+)", "habit"),
-    ]
-    for pattern, category in patterns:
-        match = re.search(pattern, user_message)
-        if match:
-            key = extract_key_from_match(match)
-            value = extract_value_from_match(match)
-            memory_remember(category, key, value, importance=4)
-            return {"detected": True, "key": key, "value": value}
-    return None
+{
+    "timestamp": "2026-07-14T10:23:45",
+    "session_id": "sess_abc",
+    "user_input": "帮我看看 GPU 算力对比",
+    "input_features": {
+        "keywords": ["帮我看看", "GPU", "算力", "对比"],
+        "length": 14,
+        "has_path": false,
+        "has_tech_term": true
+    },
+    "original_route": "chat_light",
+    "original_confidence": 0.42,
+    "corrected_route": "rag_search",
+    "correction_type": "L2_confirm"  # L2_confirm / L1_correct / user_initiated
+}
 ```
 
-#### 2.6.4 定时任务（v1，轻量版）
+#### 2.6.5 路由策略动态调整（核心自学习）
 
-每日凌晨 2:00 执行，仅做：
+四种调整机制，对应"动态优化分发策略"的真正实现：
 
-```python
-def run_daily_maintenance():
-    # 1. 记忆衰减/强化
-    for memory in get_all_memories():
-        if memory.access_count > 10:
-            memory.importance = min(5, memory.importance + 1)
-        if memory.access_count == 0 and memory.days_since_update > 30:
-            memory.importance = max(1, memory.importance - 1)
+**机制 1：关键词权重调整**
+- 触发：同类修正累积 ≥ 2 次
+- 效果：从修正记录提取关键词，提升 corrected_route 的触发权重，降低 original_route 的权重
+- 示例：用户 2 次把"帮我看看 + 技术名词"从 chat_light 修正到 rag_search -> 路由提示词加入此规则
 
-    # 2. 交互统计（写入 reflection_log）
-    stats = compute_interaction_stats()
-    save_reflection_log(stats)
+**机制 2：路由提示词动态增强**
+- 触发：累积 ≥ 3 次同类修正
+- 效果：将高频修正模式转化为路由示例，注入路由提示词
+- 示例：路由提示词尾部追加 "用户历史修正：'帮我看看' + 技术名词 -> 优先 RAG"
+
+**机制 3：Subagent 优先级调整**
+- 触发：统计窗口（最近 50 次路由）中某 Subagent 命中率 > 40%
+- 效果：高频 Subagent 优先级 +1，低频 Subagent 优先级 -1
+- 范围限制：[1, 6] 避免极端值
+
+**机制 4：置信度阈值校准**
+- 触发：每日凌晨维护 + 累积 ≥ 10 次修正
+- 效果：高置信度被修正率 > 10% 则提高 high_threshold；低置信度弃权率 > 30% 则降低 low_threshold
+- 目的：根据实际数据自适应调整阈值
+
+#### 2.6.6 演示效果（进化展示）
+
+```
+[演示 - 第 1 轮] 用户: "帮我看看 GPU 算力对比"
+  系统: 路由模型置信度 0.42 (< 0.45)
+        -> L2 确认路由: "你是想[查文档]还是[闲聊]? (1/2)"
+  用户: "1" (查文档)
+  系统: 路由到 RAG -> 检索 -> 返回结果
+  记录: 修正 (chat_light -> rag_search), 置信度 0.42
+
+[演示 - 第 2 轮] 用户: "帮我看看 模型对比"
+  系统: 路由模型置信度 0.58 (中间区, 走 top-1)
+        -> 路由到 chat_light (top-1 仍是 chat_light)
+  用户: "不对，我要查文档"
+  系统: 识别纠正意图 -> 重新路由到 RAG
+  记录: 修正 (chat_light -> rag_search), 置信度 0.58
+  触发: 关键词权重调整 ("帮我看看" + 技术名词 -> RAG)
+
+[演示 - 第 5 轮] 用户: "帮我看看 最新论文"
+  系统: 路由提示词已注入 "用户历史: '帮我看看' + 技术名词 -> RAG"
+        路由模型置信度 0.82 (≥ 0.75)
+        -> L1 自动路由到 RAG
+  用户零额外输入
+  -> 展示"根据用户使用习惯动态优化分发策略"的核心效果
 ```
 
-#### 2.6.5 演示效果
+#### 2.6.7 即时偏好引擎（辅助机制）
+
+即时偏好引擎从 v3.0 的核心机制降级为辅助机制，仍负责**内容生成偏好**（与 Router 自学习引擎负责的**路由策略**独立工作）。
+
+| 机制 | 职责 | 影响范围 |
+|------|------|---------|
+| Router 自学习引擎 | 优化路由分发策略 | 决定"用户输入 -> 哪个 Subagent" |
+| 即时偏好引擎 | 优化内容生成偏好 | 决定"Subagent 生成内容时用什么格式/风格" |
+
+**即时偏好触发**：用户说"以后都"/"记住了"/"我喜欢"时，规则匹配 + 同步写入 memory，下次请求自动注入偏好上下文。
 
 ```
-[演示 - 第 1 轮]
+[演示 - 偏好注入]
   用户: "帮我写周报，用 Markdown，中文，包含本周完成和下周计划"
-  系统: 按详细要求生成（15s）
+  系统: 按要求生成（15s）
   同时: 即时偏好引擎检测到 "用 Markdown" + "中文" -> 写入 memory
 
-[演示 - 第 2 轮，同一会话或新会话]
   用户: "写周报"
   系统: memory_recall 自动注入 ->
         {writing_format: "markdown", language: "zh-CN",
          structure: "本周完成 + 下周计划"}
         -> 自动生成符合偏好的周报（12s）
-  用户零额外输入 -> 展示 "越用越懂你" 的核心价值
 ```
 
-#### 2.6.6 实现 Checklist
+#### 2.6.8 实现 Checklist
 
-详见 `docs/CHECKLIST.md` §6 即时偏好引擎（PREF-001 ~ PREF-006）。
+- Router 自学习引擎：详见 `docs/CHECKLIST.md` §6 Router 自学习引擎（RL-001 ~ RL-046）
+- 即时偏好引擎（辅助）：详见 `docs/CHECKLIST.md` §6 即时偏好引擎（PREF-001 ~ PREF-006）
 
 关键测试目标：
-- 跨会话偏好注入 [目标: 第 2 轮自动注入率 >90%]
+- 置信度计算准确性 [目标: logprob 输入 -> 置信度误差 < 0.02]
+- L2 确认路由触发率 [目标: 低置信度输入中 > 90% 触发 L2]
+- 5 轮进化剧本演示 [目标: 第 5 轮同类输入自动正确路由]
+- 跨会话偏好注入 [目标: 第 2 轮自动注入率 > 90%]
 
 ---
 
@@ -735,7 +826,28 @@ TASK_INCOMPLETE -> 转发上游 LLM 补充（慢路径）
 实际命中率需在目标场景实测。
 ```
 
-### 3.5 量化对比
+### 3.5 双层路由的延迟权衡
+
+v3.1 新增的双层路由在低置信度场景会触发 L2 确认路由（多一轮用户交互），需权衡延迟影响。
+
+```
+L1 自动路由 (置信度 ≥ 0.45, 预估占比 ~90%):
+  延迟 = 路由模型延迟 + 工具调用延迟
+  与 v3.0 单层路由延迟相同
+
+L2 确认路由 (置信度 < 0.45, 预估占比 ~10%):
+  延迟 = 路由模型延迟 + 澄清问题生成 + 用户响应 + 工具调用延迟
+  多一轮交互 (用户响应时间不计入系统延迟)
+
+系统侧延迟影响 [推测]:
+  - L1 场景: 无影响
+  - L2 场景: 系统侧增加 ~200ms (澄清问题生成)
+  - 整体平均: 系统侧延迟增加 < 5% (因 L2 占比低)
+```
+
+**权衡结论**：L2 确认路由以极小的系统延迟代价（< 5%），换取低置信度场景的零误判。这是"快"与"准"的正确权衡--在用户最在意的"别路由错"场景，宁可多问一句也不误判。
+
+### 3.6 量化对比
 
 | 场景 | ChatGPT 类 [推测] | Prometheus [推测] | 说明 |
 |------|-----------|------------|------|
@@ -818,6 +930,50 @@ v3.0 新增：路由模型超时/失败时的安全降级
   └── 直接转发上游 LLM（跳过工具路由）
       -> 确保用户请求不会因为路由模型故障而无响应
 ```
+
+### 4.6 双层路由降低误判
+
+v3.1 新增：通过置信度评分 + 双层路由，从机制上降低路由误判。
+
+```
+传统单层路由:
+  用户输入 -> 路由模型 -> top-1 Subagent (无论置信度高低)
+  问题: 低置信度场景误判率高达 30%+ [推测]
+
+Prometheus 双层路由:
+  置信度 ≥ 0.75 -> L1 自动路由 (高置信度, 误判率低)
+  置信度 < 0.45 -> L2 确认路由 (主动询问, 误判率 = 0%)
+  中间区        -> L1 自动路由 + 标记 (用于学习)
+
+误判率估算 [目标]:
+  - L1 高置信度场景误判率 < 5%
+  - L2 确认路由误判率 = 0% (用户明确选择)
+  - 整体误判率 < 8% (vs 单层路由 15-20% [推测])
+```
+
+**L2 确认路由的用户信任价值**：低置信度时主动询问，避免"自作主张"的路由错误。赛题加分项明确要求"帮助用户建立信任"--L2 确认路由正是这一要求的核心实现。
+
+### 4.7 Router 自学习持续优化
+
+v3.1 新增：Router 不再是静态规则，而是根据用户使用习惯动态优化分发策略。
+
+```
+学习闭环:
+  路由决策 -> 用户修正反馈 -> 策略调整 -> 下次路由优化
+
+四种调整机制:
+  1. 关键词权重: "帮我看看" + 技术名词 -> 提升 RAG 权重
+  2. 提示词片段: 累积修正模式注入路由提示词
+  3. 优先级调整: 高频 Subagent 优先级 +1
+  4. 阈值校准: 根据修正率自适应调整置信度阈值
+
+效果 [目标]:
+  - 同类输入第 2 次路由准确率 > 75%
+  - 同类输入第 5 次路由准确率 > 90%
+  - 路由准确率随使用量持续提升
+```
+
+**与 §4.1 静态路由准确率的区别**：§4.1 的 > 90% 是**初始**准确率（基于工具定义 + 优先级 + 防误判规则）。§4.7 的自学习是在此基础上，根据用户个人使用习惯**持续提升**准确率。两者叠加，长期使用后路由准确率可 > 95% [目标]。
 
 ---
 
@@ -1025,6 +1181,79 @@ python3 tests/test_routing_accuracy.py
 # 输出：路由准确率、误判率、各 Subagent 召回率
 ```
 
+### 7.5 Subagent 市场
+
+v3.1 新增：赛题加分项要求"含预置 Subagent **市场**"。v3.0 只是"合入 MTClaw 目录"，不是市场。v3.1 实现完整的市场机制：CLI + registry 索引 + 安装/卸载/更新。详细设计见 `docs/add/add-market.md`。
+
+**市场架构**：
+
+```
+Subagent Registry (MTClaw 仓库的 subagents/registry.json)
+  ├── 5 个官方 Subagent (预置, 开箱即用)
+  └── 社区 Subagent (社区贡献)
+        │
+        ▼
+prometheus market list / install / remove / update
+        │
+        ├── 下载 subagent 目录
+        ├── 校验 subagent.json
+        ├── pip install 依赖
+        ├── 合并 functions.jsonl (注册工具到 FR)
+        └── FR 热重载 (不中断现有连接)
+```
+
+**CLI 命令**：
+
+```bash
+prometheus market list [--category <cat>] [--source <src>]  # 浏览
+prometheus market info <name>                                # 详情
+prometheus market search <keyword>                           # 搜索
+prometheus market install <name>[@version]                   # 安装
+prometheus market remove <name>                              # 卸载
+prometheus market update <name> | --all                      # 更新
+prometheus market installed                                  # 已安装列表
+prometheus market outdated                                   # 可更新列表
+```
+
+**Subagent 清单格式（subagent.json）**：
+
+```json
+{
+  "name": "rag",
+  "version": "1.0.0",
+  "description": "本地知识库 RAG Subagent",
+  "category": "knowledge",
+  "source": "official",
+  "user_friendly_name": "查文档",
+  "dependencies": {"python": ["chromadb>=0.5", "sentence-transformers>=2.7"]},
+  "provides": {"tools": ["rag_search", "rag_ingest", "rag_status"]},
+  "routing": {"trigger_keywords": ["找一下", "搜索"], "base_priority": 4},
+  "compatibility": {"mtclaw_min_version": "1.0.0", "aios_min_version": "1.4.0"}
+}
+```
+
+**官方预置 5 个 Subagent**：rag / memory / writing / schedule / chat。预置保护：官方 Subagent 不允许通过 `market remove` 卸载，但可以 `market update`。
+
+**演示效果**：
+
+```
+评委: "你们说的 Subagent 市场在哪里?"
+
+演示:
+  prometheus market list
+  -> 显示 5 个官方 Subagent (已安装) + 2 个社区 Subagent (未安装)
+  
+  prometheus market install weather
+  -> 下载 + 安装依赖 + 注册 + FR 热重载
+  -> "今天北京天气怎么样" -> 路由到 weather Subagent
+  
+  prometheus market remove weather
+  -> 反注册 + FR 热重载
+  -> "今天天气怎么样" -> 路由回兜底 (上游 LLM)
+```
+
+**与 Router 自学习引擎的协同**：市场安装时从 subagent.json 读取 `routing.base_priority` 作为基础优先级；Router 自学习引擎在此之上叠加 `dynamic_adjustment`；卸载时同步清除该 Subagent 的路由学习数据。
+
 ---
 
 ## 8. 生态与商业价值
@@ -1180,26 +1409,61 @@ ChatGPT / 通用 AI              普罗米修斯
 
 **对应赛题加分项**："Router 自学习：根据用户使用习惯动态优化分发策略"
 
-即时偏好引擎即为 Router 自学习的实现：
+v3.1 重大升级：v3.0 的"即时偏好引擎"只是偏好记忆注入，**不是路由策略优化**。v3.1 重新设计 Router 自学习引擎，通过四个机制真正实现"动态优化分发策略"。详细设计见 `docs/add/add-router-learning.md`。
 
 ```
-v3.0 即时偏好引擎 = Router 自学习
+v3.1 Router 自学习引擎 = 真正的动态优化分发策略
 
-学习机制:
-  1. 偏好声明检测: 用户说"以后都用 Markdown" -> 实时写入 memory
-  2. 行为模式提取: 记录每次工具调用的 interaction_log
-  3. 路由策略优化: 根据高频使用模式调整路由提示词
+四个机制:
+  1. 路由置信度评分 (logprobs -> 置信度)
+     量化路由决策的把握程度
 
-  例: 发现用户说"帮我看看"时 90% 情况是想找文档而非闲聊
-  -> 调整路由提示词，提高"帮我看看"在 RAG 的匹配优先级
+  2. 双层路由 (L1 自动 + L2 确认)
+     低置信度时主动询问用户, 避免误路由
 
-演示效果:
-  [第 1 轮] 用户: "写周报，用 Markdown，中文，包含本周完成和下周计划"
-           系统: 按要求生成 + 即时写入偏好
-  [第 2 轮] 用户: "写周报"
-           系统: 自动注入偏好 -> 生成符合偏好的周报
-           用户零额外输入 -> 展示 Router 自学习效果
+  3. 用户修正反馈 (4 种场景)
+     收集自学习训练数据
+
+  4. 路由策略动态调整 (4 种调整)
+     - 关键词权重调整
+     - 路由提示词动态增强
+     - Subagent 优先级调整
+     - 置信度阈值校准
+     -> 真正改变"用户输入 -> 哪个 Subagent"的分发策略
+
+vs v3.0 即时偏好引擎:
+  v3.0: 用户说"以后都用 Markdown" -> 写入 memory -> 注入生成 prompt
+        (只影响"内容生成偏好", 不影响路由)
+
+  v3.1: 用户修正"帮我看看"从闲聊到RAG -> 提升关键词权重 + 注入路由提示词
+        (直接影响"路由分发策略")
 ```
+
+**演示效果（5 轮进化剧本）**：
+
+```
+[第 1 轮] 用户: "帮我看看 GPU 算力对比"
+  系统: 置信度 0.42 -> L2 确认路由 -> "你是想[查文档]还是[闲聊]?"
+  用户: "查文档" -> 路由到 RAG
+  记录: 修正 (chat_light -> rag_search)
+
+[第 2 轮] 用户: "帮我看看 模型对比"
+  系统: 置信度 0.58 -> L1 路由到 chat_light (top-1)
+  用户: "不对，我要查文档" -> 重新路由到 RAG
+  记录: 修正 (chat_light -> rag_search)
+  触发: 关键词权重调整 ("帮我看看" + 技术名词 -> RAG)
+
+[第 5 轮] 用户: "帮我看看 最新论文"
+  系统: 路由提示词已学习 -> 置信度 0.82 -> L1 自动路由到 RAG
+  用户零额外输入
+  -> 展示"根据用户使用习惯动态优化分发策略"的核心效果
+```
+
+**与即时偏好引擎的分工**：
+- Router 自学习引擎：优化**路由分发策略**（用户输入 -> 哪个 Subagent）
+- 即时偏好引擎（辅助）：优化**内容生成偏好**（Subagent 生成内容时用什么格式）
+
+两者独立工作，互不干扰。
 
 ### 9.2 可视化路由追踪：UI 实时展示 Router 决策路径
 
@@ -1222,11 +1486,13 @@ route_tracer.html（~200 行单文件）
   -> 评委可以同时看到对话和路由决策过程
 ```
 
-### 9.3 开箱即用：源码合入 MTClaw，自带安装脚本一键安装
+### 9.3 开箱即用：一键安装 + 预置 Subagent 市场
 
 **对应赛题加分项**："开箱即用：提供 MTT AIBOOK 一键安装包，含预置 Subagent 市场"
 
-**v3.0 关键变更**：代码合入 MTClaw 仓库，使用 MTClaw 自带安装脚本：
+v3.1 重大升级：v3.0 只是"代码合入 MTClaw 目录"，不是赛题要求的"市场"。v3.1 实现完整的市场机制（CLI + registry 索引 + 安装/卸载/更新），5 个官方 Subagent 预置即用，社区 Subagent 可通过市场扩展。详细设计见 `docs/add/add-market.md`。
+
+**一键安装（使用 MTClaw 自带安装脚本）**：
 
 ```
 git clone https://github.com/MooreThreads/MTClaw.git
@@ -1236,17 +1502,68 @@ cd MTClaw
 # 自动完成: 依赖安装 -> 目录创建 -> DB 初始化 -> cron 设置 -> 服务启动
 # 安装时间 < 5 分钟 [目标]
 
-预置内容（合入 MTClaw 仓库的 subagents/ 目录）:
-  ├── 5 个 Subagent（RAG/记忆/写作/日程与任务/闲聊）
-  ├── 7 个写作模板（周报/邮件/技术文档/会议纪要/文章/PPT大纲）
-  ├── 3 类样本数据（笔记/CSV/周报范例）
-  ├── 路由追踪面板（route_tracer.html）
-  └── 路由准确率测试套件（50 条测试集）
+# 评委设备上的安装
+# 赛事方提供 10 台 AIBOOK 设备
+# 评委 clone 代码 -> ./install.sh -> 立即可用
+```
 
-评委安装后:
-  curl :18790/health -> 确认运行
-  ./run_demo.sh -> 自动执行演示剧本
-  -> 全程 < 10 分钟从安装到演示
+**预置 Subagent 市场**：
+
+```
+安装完成后:
+  prometheus market list
+  -> 显示 5 个官方 Subagent (已安装, 开箱即用):
+     ├── rag        (knowledge)  - 本地知识库 RAG
+     ├── memory     (memory)     - 记忆与偏好
+     ├── writing    (writing)    - 写作润色翻译
+     ├── schedule   (schedule)   - 日程与任务
+     └── chat       (chat)       - 闲聊陪伴
+
+  + 社区 Subagent (未安装, 可扩展):
+     ├── weather    (community)  - 天气查询
+     └── finance    (community)  - 股票行情
+
+评委可现场演示:
+  prometheus market install weather
+  -> 下载 + 安装依赖 + 注册 + FR 热重载
+  -> "今天北京天气怎么样" -> 路由到 weather Subagent
+
+  prometheus market remove weather
+  -> 反注册 + FR 热重载
+  -> "今天天气怎么样" -> 路由回兜底
+```
+
+**预置内容（合入 MTClaw 仓库的 subagents/ 目录）**:
+
+```
+MTClaw 仓库结构:
+  ├── function_router/          # MTClaw 核心（已有）
+  ├── subagents/                # Prometheus 新增目录
+  │   ├── registry.json         # 市场索引文件
+  │   ├── rag/                  # 5 个官方 Subagent
+  │   ├── memory/
+  │   ├── writing/
+  │   ├── schedule/
+  │   └── chat/
+  ├── templates/                # 写作模板
+  ├── dashboard/                # 路由追踪面板
+  └── install/                  # MTClaw 自带安装脚本（扩展）
+
+预置内容:
+  ├── 5 个 Subagent（官方, 开箱即用）
+  ├── 7 个写作模板
+  ├── 3 类样本数据
+  ├── 路由追踪面板
+  ├── 路由准确率测试套件（50 条测试集）
+  └── Subagent 市场 CLI（prometheus market ...）
+```
+
+**评委安装后**:
+```
+curl :18790/health              -> 确认运行
+./run_demo.sh                   -> 自动执行演示剧本
+prometheus market list          -> 展示预置 + 可扩展市场
+-> 全程 < 10 分钟从安装到演示
 ```
 
 ### 9.4 路由 fallback 安全网
@@ -1273,7 +1590,10 @@ cd MTClaw
 
 | 关键指标 | 目标值 | 数据类型 | 技术支撑 | 详细设计 |
 |---------|--------|---------|---------|---------|
-| Router 分发准确率 | > 90% | [目标] | 5 Subagent + 优先级 + 防误判 | §2.1 |
+| Router 分发准确率（初始） | > 90% | [目标] | 5 Subagent + 优先级 + 防误判 | §4.1 |
+| Router 分发准确率（自学习后） | > 95% | [目标] | Router 自学习引擎持续优化 | §4.7 |
+| 双层路由误判率 | < 8% | [目标] | L2 确认路由零误判 + L1 高置信度低误判 | §4.6 |
+| 路由置信度评估 | logprobs 驱动 | [目标] | 路由模型启用 logprobs | §2.6.2 |
 | 各 Subagent 任务完成质量 | 100% 可演示 | [目标] | 每个 Subagent 独立测试 | §2.1-2.5 |
 | 通用 Benchmark 智商不变低 | 不退化 | 设计保证 | 100% 透明转发上游 LLM | §4.4 |
 | MTClaw 工具准确率 | 94.8%~97.5% | [推测] | MTClaw 团队测试（非 Prometheus 实测） | MTClaw 报告 |
@@ -1286,6 +1606,7 @@ cd MTClaw
 |---------|--------|---------|---------|---------|
 | 场景覆盖广度 | 5 Subagent / 6 类场景 | - | 办公/学习/检索/日程/社交/通用 | §6.1 |
 | 产品化完成度 | 可直接安装使用 | [目标] | 一键安装 + 预置数据 + 演示剧本 | §7 |
+| Subagent 市场机制 | CLI + registry + 安装/卸载/更新 | [目标] | 官方预置 + 社区贡献 + FR 热重载 | §7.5 |
 
 ### 生态和商业价值
 
@@ -1302,20 +1623,6 @@ cd MTClaw
 
 | 加分项 | 赛题原文 | 实现方式 | 详细设计 |
 |--------|---------|---------|---------|
-| Router 自学习 | "根据用户使用习惯动态优化分发策略" | 即时偏好引擎 | §9.1 |
-| 可视化路由追踪 | "UI 实时展示 Router 决策路径" | 轻量 route_tracer.html | §9.2 |
-| 开箱即用 | "MTT AIBOOK 一键安装包，含预置 Subagent 市场" | 一键安装 + 预置数据 | §9.3 |
-
----
-
-## 附录：与竞品架构对比
-
-| 维度 | ChatGPT | 通用 Agent 框架 | Prometheus |
-|------|---------|----------------|------------|
-| 路由策略 | 单一模型 | Prompt 分岔 | **Function Router + 5 Subagent 专职** |
-| 记忆 | 会话级 | 手动管理 | **即时偏好学习 + 跨会话持久化** |
-| 延迟优化 | 不分层 | 不分层 | **L1/L2/L3 三层策略** |
-| 安全 | 通用沙箱 | 无 | **输入校验 + 参数化查询 + 文件权限** |
-| 数据隐私 | 云端 | 混合 | **全本地存储** |
-| 可观测性 | 无 | 日志 | **tool_history API + 路由追踪面板** |
-| 部署 | SaaS | Docker/源码 | **源码合入 MTClaw，自带安装脚本** |
+| Router 自学习 | "根据用户使用习惯动态优化分发策略" | Router 自学习引擎（置信度 + 双层路由 + 修正反馈 + 策略调整） | §2.6 / §9.1 |
+| 可视化路由追踪 | "UI 实时展示 Router 决策路径" | 轻量 route_tracer.html + 置信度/修正历史展示 | §7.3 / §9.2 |
+| 开箱即用 | "MTT AIBOOK 一键安装包，含预置 Subagent 市场" | 一键安装 + 预置 5 Subagent + Subagent 市场 CLI | §7.5 / §9.3 |

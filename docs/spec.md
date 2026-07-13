@@ -57,17 +57,6 @@
 - 硬件：MTT AIBOOK（含 MTT GPU）
 - 自备服务：路由模型 API + 上游模型 API
 
-### 1.5 v2.0 变更摘要
-
-| 变更 | 说明 |
-|------|------|
-| Subagent 8→5 | 砍掉 WebFetch/WebSearch/DataAnalysis（上游 LLM 兜底覆盖） |
-| 工具数 24→15 | 回到 LLM function calling 准确率最佳范围 |
-| 反思引擎→即时偏好引擎 | 同步偏好提取，不依赖 cron，演示可跑通 |
-| 砍掉插件系统/知识图谱/Web UI/fallback 链 | 聚焦核心，确保 7 周交付 | |
-| 从"无损接入"改为"源码合入 MTClaw" | 官方希望最终代码提交到 MTClaw 开源仓库 | 用 MTClaw 自带安装脚本一键安装 |
-| 所有数字标注来源 | [实测] / [目标] / [推测] 三级分类 | |
-
 ---
 
 ## 2. 系统架构

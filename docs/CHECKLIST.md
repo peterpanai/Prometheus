@@ -301,13 +301,18 @@
 - [ ] RL-023 实现 `calibrate_thresholds()` - 阈值校准（每日 cron + ≥ 10 次修正）
 - [ ] RL-024 实现 `build_dynamic_routing_prompt()` - 动态提示词构造（基础 + 权重 + 片段 top 5）
 
-### MTClaw FR 集成
+### MTClaw FR 集成（分层）
 
-- [ ] RL-025 扩展 MTClaw FR：路由前加载动态提示词
-- [ ] RL-026 扩展 MTClaw FR：路由调用时启用 logprobs=true
-- [ ] RL-027 扩展 MTClaw FR：路由后置信度评估 + 双层路由
-- [ ] RL-028 扩展 MTClaw FR：路由决策记录
-- [ ] RL-029 扩展 MTClaw FR：修正检测 + 策略调整触发
+> 分层落点：FR 仅暴露 logprob（通用），Prometheus 外层做置信度决策与自学习（差异化）。详见 `add-router-learning.md` §3.6。
+
+**FR 层（配置 / 上游贡献）**：
+- [ ] RL-026 [FR·配置] 路由调用启用 logprobs=true + 验证响应是否透传路由模型 logprob（若否，提小 PR 让 FR 透传，通用能力）
+
+**Prometheus 层（包装 FR，差异化）**：
+- [ ] RL-025 路由前构造动态路由提示词注入 FR（关键词权重 + 历史修正示例 top5）
+- [ ] RL-027 路由后置信度评估 + 双层路由决策（读 FR logprob，§3.1/§3.2）
+- [ ] RL-028 路由决策记录到 routing_decisions
+- [ ] RL-029 路由后修正检测 + 策略调整触发（§3.4）
 
 ### CLI
 

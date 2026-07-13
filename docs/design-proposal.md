@@ -100,7 +100,7 @@ Router 自学习引擎（前台，同步）:
 | **写作润色翻译** | OpenClaw Skills 系统、Hermes system_prompt（写作指导） | 三者无专门写作工具；借鉴 Skills 模板化 + 系统提示词写作指导 | `add-writing.md` §2 |
 | **日程与任务** | Hermes cron_tool、OpenClaw cron 系统 | 三者均无个人日程管理（cron 面向系统调度）；自建结构化日程/任务模型 + dateparser | `add-schedule.md` §2 |
 | **闲聊陪伴** | OpenClaw Agent Harness + Skills（personality）、Codex Role System、MTClaw Completion Check | 路由模型直回 + permissive completion check；借鉴 Role System 人格策略 | `add-chat.md` §2 |
-| **Router 自学习引擎** | MTClaw FR（logprobs 置信度）、Codex ToolRouter（失败降级）、OpenClaw ToolAvailabilitySignal（动态权重） | logprob 驱动双层路由 + 历史修正驱动策略调整 | `add-router-learning.md` §2 |
+| **Router 自学习引擎** | MTClaw FR（路由 logprob）、Codex ToolRouter（失败降级）、OpenClaw ToolAvailabilitySignal（动态权重） | FR 透传 logprob，Prometheus 外层派生置信度 + 双层路由 + 历史修正驱动策略调整 | `add-router-learning.md` §2 |
 | **Subagent 市场** | VS Code Marketplace（CLI）、npm registry（版本/依赖）、OpenClaw plugin SDK（生命周期）、Hermes plugin.yaml（清单格式） | "清单 + CLI + 注册表"轻量市场机制 | `add-market.md` §2 |
 
 > 框架级架构参考（如 Codex Orchestrator 的审批/重试分离、multi_agents V2 的 spawn/send/wait 原语）已融入 §1.3 架构总览与 MTClaw FR 集成，不单独列入 Subagent 调研。

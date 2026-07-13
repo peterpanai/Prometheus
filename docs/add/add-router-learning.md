@@ -42,6 +42,10 @@ v3.0 早期方案中的"即时偏好引擎"只实现了**偏好记忆注入**（
 - **路由输出**：top-1 工具调用 + 参数（标准 OpenAI function calling 格式）
 - **logprob 可获取性**：OpenAI-compatible 接口支持 `logprobs=true`，可拿到候选 token 的对数概率
 
+> ⚠️ **待验证**：FR 的 `logprobs=true` 返回的是**路由模型（qwen3-30b）对工具名 token 的 logprob**，还是上游 LLM 的 logprob？本引擎依赖前者（路由决策置信度）。
+> - 若已暴露路由模型 logprob -> Prometheus 外层读取即可，**无需改 FR 核心**
+> - 若未暴露 -> 唯一需要"融入 FR"的改动：让 FR 把路由 logprob 透传到响应（一个很小的上游 PR）
+
 ### 2.2 Codex ToolRouter
 
 - `~/ws/codex/codex-rs/tool-router/` - 工具路由分发
@@ -56,7 +60,13 @@ v3.0 早期方案中的"即时偏好引擎"只实现了**偏好记忆注入**（
 
 ### 2.4 结论
 
-MTClaw FR 的 OpenAI-compatible 接口支持 logprob，可以拿到路由置信度。Codex 的路由失败降级和 OpenClaw 的动态权重调整提供了自学习的实现参考。本设计将二者结合：置信度驱动双层路由 + 历史修正驱动策略调整。
+**概念区分**：MTClaw FR 提供的是 logprob（原始信号），不是"置信度"。置信度评分（logprob 派生的归一化分数）、双层路由决策、修正反馈与策略自学习均为 Prometheus 的增量，FR 本身不具备。
+
+**分层落点**（详见 §3.6）：
+- **FR 层（上游贡献）**：仅暴露路由模型 logprob（通用能力，所有 FR 用户受益）
+- **Prometheus 层（包装 FR，不改 FR 核心）**：置信度计算 + 双层路由决策 + 决策/修正记录 + 策略自学习（赛题加分项核心差异化，耦合 Prometheus 的 Subagent 集合，不下沉到 FR）
+
+Codex 的路由失败降级和 OpenClaw 的动态权重调整提供了自学习的实现参考。本设计将二者结合：置信度驱动双层路由 + 历史修正驱动策略调整。
 
 ## 3. 设计决策
 
@@ -327,32 +337,47 @@ SQLite 表 (router_learning.db):
       (threshold_name, value, last_calibrated, calibration_reason)
 ```
 
-### 3.6 与 MTClaw FR 的集成
+### 3.6 与 MTClaw FR 的集成（分层落点）
+
+采用**分层架构**：FR 保持通用 Function Router 定位，Prometheus 在外层包装做置信度决策与自学习，不把学习逻辑下沉到 FR 核心。
 
 ```
-MTClaw FR 请求处理流程 (Prometheus 扩展点):
+请求处理流程（分两层）:
+
+【FR 层 · MTClaw 核心，通用】
   │
-  ├── [新增] 路由前: 加载动态路由提示词
+  ├── [FR 配置] 加载 functions.jsonl + 路由提示词（--functions-file）
+  ├── [FR 配置] 路由调用启用 logprobs=true
+  ├── FR 调用路由模型 (qwen3-30b, temperature=0.0)
+  │     └── 输出: top-1 工具调用 + 候选工具 logprob 分布
+  ├── 工具调用执行
+  └── ⚠️ 待验证: FR 响应是否透传路由模型 logprob？
+        ├── 是 -> Prometheus 直接读取，无需改 FR 核心
+        └── 否 -> [上游贡献] 让 FR 透传路由 logprob（小 PR，通用能力）
+
+【Prometheus 层 · 包装 FR，差异化】
+  │
+  ├── 路由前: 构造动态路由提示词（注入 FR）
   │     ├── 基础路由提示词 (静态)
   │     ├── 关键词权重提示 (从 routing_keyword_weights)
   │     └── 用户历史修正示例 (从 routing_prompt_fragments, top 5)
   │
-  ├── FR 调用路由模型 (logprobs=true)
-  │
-  ├── [新增] 路由后: 置信度评估 + 双层路由决策
+  ├── 路由后: 读 FR logprob -> 置信度计算 (§3.1) + 双层路由决策 (§3.2)
   │     ├── 置信度 ≥ 0.75 -> L1 自动路由
   │     ├── 0.45 ≤ 置信度 < 0.75 -> L1 自动路由 (标记低置信度)
   │     └── 置信度 < 0.45 -> L2 确认路由 (生成澄清问题)
   │
-  ├── [新增] 路由决策记录到 routing_decisions
+  ├── 路由决策记录到 routing_decisions
   │
-  ├── 工具调用执行
-  │
-  └── [新增] 路由后: 修正检测
+  └── 路由后: 修正检测
         ├── 用户纠正意图检测
         ├── 如有修正 -> 记录 routing_corrections
         └── 触发策略调整 (3.4.1 / 3.4.2 / 3.4.3)
 ```
+
+**为什么不把置信度/学习全塞进 FR**：阈值随用户数据动态校准、修正 schema 耦合 Prometheus 的 Subagent 集合、策略自学习是赛题加分项的核心差异化--下沉会污染通用路由器。FR 只承担"暴露 logprob"这件通用小事。
+
+**比赛策略**：比赛期间 Prometheus 外层包装先跑通 demo（不依赖 upstream merge）；赛后把"FR 暴露路由 logprob"这件通用能力贡献回 MTClaw。
 
 ### 3.7 演示剧本（进化展示）
 
@@ -520,13 +545,16 @@ prometheus router calibrate      # 手动触发阈值校准
 - [ ] RL-023 实现 `calibrate_thresholds()` - 阈值校准
 - [ ] RL-024 实现 `build_dynamic_routing_prompt()` - 动态提示词构造
 
-### MTClaw FR 集成
+### MTClaw FR 集成（分层）
 
-- [ ] RL-025 扩展 MTClaw FR：路由前加载动态提示词
-- [ ] RL-026 扩展 MTClaw FR：路由调用时启用 logprobs
-- [ ] RL-027 扩展 MTClaw FR：路由后置信度评估 + 双层路由
-- [ ] RL-028 扩展 MTClaw FR：路由决策记录
-- [ ] RL-029 扩展 MTClaw FR：修正检测 + 策略调整触发
+**FR 层（配置 / 上游贡献）**：
+- [ ] RL-026 [FR·配置] 启用 logprobs=true + 验证响应是否透传路由模型 logprob（若否，提小 PR 让 FR 透传）
+
+**Prometheus 层（包装 FR，差异化）**：
+- [ ] RL-025 路由前构造动态路由提示词注入 FR（关键词权重 + 历史修正示例）
+- [ ] RL-027 路由后置信度评估 + 双层路由决策（读 FR logprob）
+- [ ] RL-028 路由决策记录到 routing_decisions
+- [ ] RL-029 路由后修正检测 + 策略调整触发
 
 ### CLI
 

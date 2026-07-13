@@ -184,15 +184,11 @@ MTClaw FR 通过 `--functions-file` 加载 rag 的 3 个工具定义，通过 `-
 
 #### 2.1.5 实现 Checklist
 
-- [ ] 初始化 ChromaDB Collection `documents`（1024d, cosine 距离）
-- [ ] 实现 5 种文件格式的分段器
-- [ ] 实现 BGE-M3 嵌入生成（sentence-transformers, device=cpu）
-- [ ] 实现稠密 + BM25 混合检索 + RRF 融合
-- [ ] 实现文件去重（SHA256 hash）
-- [ ] 实现 source_filter 过滤（按文件类型/目录）
-- [ ] 编写 rag_search.sh / rag_ingest.sh / rag_status.sh
-- [ ] **测试：BGE-M3 在目标硬件（MTT AIBOOK）上的嵌入延迟** [目标: <200ms/条]
-- [ ] **测试：Top-5 召回率** [目标: >85%]
+详见 `docs/CHECKLIST.md` §1 RAG 知识库（RAG-001 ~ RAG-025）。
+
+关键测试目标：
+- BGE-M3 嵌入延迟 < 200ms/条 [目标]
+- Top-5 召回率 > 85% [目标]
 
 ---
 
@@ -266,15 +262,10 @@ memory_recall(context) ->
 
 #### 2.2.5 实现 Checklist
 
-- [ ] 创建 SQLite 表 memories / reminders / interaction_log + 索引
-- [ ] 初始化 ChromaDB Collection `memories`
-- [ ] 实现 memory_remember（SQLite UPSERT + ChromaDB 同步写入）
-- [ ] 实现 memory_recall（语义检索 + 高 importance 补充 + 合并排序）
-- [ ] 实现 memory_set_reminder（dateparser 解析自然语言时间）
-- [ ] 实现 interaction_log 记录（每次工具调用后自动记录）
-- [ ] 实现记忆衰减/强化逻辑（基于 access_count）
-- [ ] 实现即时偏好注入（请求前自动注入上下文）
-- [ ] **测试：偏好召回准确率** [目标: >85%]
+详见 `docs/CHECKLIST.md` §2 记忆与偏好（MEM-001 ~ MEM-031）。
+
+关键测试目标：
+- 偏好召回准确率 > 85% [目标]
 
 ---
 
@@ -383,14 +374,11 @@ intensity 级别:
 
 #### 2.3.4 实现 Checklist
 
-- [ ] 创建 7 个文档模板
-- [ ] 实现 writing_engine.py（generate / polish / translate）
-- [ ] 实现偏好注入（import memory_engine.recall）
-- [ ] 实现上游 LLM 调用（httpx -> OpenAI-compatible API）
-- [ ] 实现错误降级（上游不可用时返回友好错误）
-- [ ] 实现 writing_humanize（AI痕迹识别 + 三级强度改写）
-- [ ] **测试：格式符合偏好概率** [目标: >80%]
-- [ ] **测试：去AI化后文本通过AI检测器的概率** [目标: >70%]
+详见 `docs/CHECKLIST.md` §3 写作润色翻译（WRT-001 ~ WRT-027）。
+
+关键测试目标：
+- 格式符合偏好概率 > 80% [目标]
+- 去AI化后文本通过AI检测器的概率 > 70% [目标]
 
 ---
 
@@ -504,16 +492,11 @@ schedule_create_event.sh 执行流程：
 
 #### 2.4.5 实现 Checklist
 
-- [ ] 创建 SQLite events / tasks 表 + 索引
-- [ ] 实现 dateparser 自然语言时间解析（支持"明天"/"下周一"/"下午3点"/"3小时后"等）
-- [ ] 实现 schedule_create_event（含重复日程支持：daily/weekly/monthly）
-- [ ] 实现 schedule_query（今日/本周/指定日期范围/按类别过滤）
-- [ ] 实现 schedule_create_task（含子任务、优先级、标签）
-- [ ] 实现 schedule_list_tasks（按状态/优先级/截止日期排序）
-- [ ] 实现 schedule_complete_task
-- [ ] 实现到期提醒检查（与 memory_set_reminder 协同）
-- [ ] **测试：自然语言时间解析准确率** [目标: >90%]
-- [ ] **测试：日程查询延迟** [目标: <500ms]
+详见 `docs/CHECKLIST.md` §4 日程与任务（SCH-001 ~ SCH-033）。
+
+关键测试目标：
+- 自然语言时间解析准确率 > 90% [目标]
+- 日程查询延迟 < 500ms [目标]
 
 ---
 
@@ -574,13 +557,12 @@ complex 类消息绝对禁止路由到 chat_light：
 
 #### 2.5.4 实现 Checklist
 
-- [ ] 实现 5 条闲聊意图识别规则
-- [ ] 实现 complex 消息误判保护（保守策略）
-- [ ] 实现 mood 自动检测（基于关键词 + 情感词典）
-- [ ] 实现路由模型直回 prompt 构造（含 mood 策略 + 用户画像）
-- [ ] **测试：闲聊延迟** [目标: <3s]
-- [ ] **测试：complex 消息不误路由到 chat_light**（50 条测试集，0 误判）
-- [ ] **测试：连续 10 轮闲聊不走上游 LLM**
+详见 `docs/CHECKLIST.md` §5 闲聊陪伴（CHT-001 ~ CHT-015）。
+
+关键测试目标：
+- 闲聊延迟 < 3s [目标]
+- complex 消息不误路由到 chat_light（50 条测试集，0 误判）
+- 连续 10 轮闲聊不走上游 LLM
 
 ---
 
@@ -661,12 +643,10 @@ def run_daily_maintenance():
 
 #### 2.6.6 实现 Checklist
 
-- [ ] 实现 `detect_and_store_preference()` - 即时偏好检测 + 同步写入
-- [ ] 实现 `compute_interaction_stats()` - Subagent 频次/关键词/日均交互数统计
-- [ ] 实现记忆衰减/强化逻辑（access_count + 时间规则）
-- [ ] 实现即时偏好注入（请求前自动注入）
-- [ ] 实现 cron 定时维护任务（轻量版）
-- [ ] **测试：跨会话偏好注入** [目标: 第 2 轮自动注入率 >90%]
+详见 `docs/CHECKLIST.md` §6 即时偏好引擎（PREF-001 ~ PREF-006）。
+
+关键测试目标：
+- 跨会话偏好注入 [目标: 第 2 轮自动注入率 >90%]
 
 ---
 

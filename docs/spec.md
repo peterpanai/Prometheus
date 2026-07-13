@@ -232,6 +232,7 @@ CREATE TABLE interaction_log (
 {"name":"writing_generate","description":"生成各类文档。包括周报、邮件、技术文档、会议纪要等。用户说'帮我写'、'生成一份'、'起草'时触发。","parameters":{"type":"object","properties":{"doc_type":{"type":"string","enum":["weekly_report","email","tech_doc","meeting_minutes","article","essay","ppt_outline"],"description":"文档类型"},"topic":{"type":"string","description":"文档主题或标题"},"key_points":{"type":"array","items":{"type":"string"},"description":"需要包含的关键要点列表"},"style":{"type":"string","enum":["formal","casual","technical","academic"],"description":"写作风格"},"length":{"type":"string","enum":["short","medium","long"],"description":"篇幅长度"}},"required":["doc_type","topic"]}}
 {"name":"writing_polish","description":"润色已有文本。用户说'帮我润色'、'优化一下这段'、'改得...一点'时触发。","parameters":{"type":"object","properties":{"text":{"type":"string","description":"需要润色的原文"},"goal":{"type":"string","enum":["more_professional","more_concise","more_friendly","fix_grammar","more_technical"],"description":"润色目标"},"target_language":{"type":"string","description":"目标语言，如 zh-CN/en，留空表示保持原语言"}},"required":["text"]}}
 {"name":"writing_translate","description":"翻译文本。用户说'翻译'、'翻译成'、'translate'时触发。","parameters":{"type":"object","properties":{"text":{"type":"string","description":"需要翻译的原文"},"source_lang":{"type":"string","description":"源语言，auto 表示自动检测"},"target_lang":{"type":"string","description":"目标语言，如 zh-CN/en/ja"},"keep_formatting":{"type":"boolean","description":"是否保留原文格式（Markdown/代码块等）"}},"required":["text","target_lang"]}}
+{"name":"writing_humanize","description":"去AI化改写。用户说'去AI味'、'去AI化'、'改得像人写的'时触发。","parameters":{"type":"object","properties":{"text":{"type":"string","description":"需要去AI化的原文"},"intensity":{"type":"string","enum":["light","medium","heavy"],"description":"改写强度：light仅去套话/medium重写句式/heavy全面改写"},"preserve_formatting":{"type":"boolean","description":"是否保留原文格式（Markdown/代码块等）"}},"required":["text"]}}
 ```
 
 ### 3.4 日程与任务 Subagent
@@ -276,12 +277,12 @@ CREATE TABLE interaction_log (
 |----------|--------|-----------|---------|---------|
 | RAG 知识库 | 3 | 否（本地检索） | 1-3s | ChromaDB |
 | 记忆与偏好 | 3 | 否（本地检索） | <1s | SQLite + ChromaDB |
-| 写作润色翻译 | 3 | **是** | 10-40s | 无 |
+| 写作润色翻译 | 4 | **是** | 10-40s | 无 |
 | 日程与任务 | 5 | 否（本地 SQLite） | <1s | SQLite |
 | 闲聊陪伴 | 1 | **否**（路由模型直回） | 1-3s | SQLite（记忆注入） |
-| **合计** | **15** | | | |
+| **合计** | **16** | | | |
 
-加上 MTClaw 的 5 个 builtin 工具（find/ls/cat/grep/sleep），总计 20 个工具暴露给路由模型。
+加上 MTClaw 的 5 个 builtin 工具（find/ls/cat/grep/sleep），总计 21 个工具暴露给路由模型。
 
 **注意**：v2.0 将工具数从 24 降到 18，其中 13 个为 Prometheus 自定义工具。研究表明 LLM function calling 在工具数 <15 时准确率最高 [推测]。我们通过 5 个 Subagent 的清晰划分（每个 1-3 个工具）来保持路由模型的判断精度。
 
@@ -1016,6 +1017,7 @@ exit 1
 | `writing_generate` | 写作 | 6 (doc_type, topic, key_points, style, length) | 是 | 否 |
 | `writing_polish` | 写作 | 3 (text, goal, target_language) | 是 | 否 |
 | `writing_translate` | 写作 | 4 (text, source_lang, target_lang, keep_formatting) | 是 | 否 |
+| `writing_humanize` | 写作 | 3 (text, intensity, preserve_formatting) | 是 | 否 |
 | `schedule_create_event` | 日程与任务 | 6 (title, start_time, end_time, location, category, reminder_minutes) | 否 | 是 |
 | `schedule_query` | 日程与任务 | 3 (time_range, category, status) | 否 | 否 |
 | `schedule_create_task` | 日程与任务 | 5 (title, priority, due_date, tags, description) | 否 | 是 |

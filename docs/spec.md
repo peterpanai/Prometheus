@@ -273,7 +273,7 @@ CREATE TABLE interaction_log (
 
 加上 MTClaw 的 5 个 builtin 工具（find/ls/cat/grep/sleep），总计 21 个工具暴露给路由模型。
 
-**注意**：v2.0 将工具数从 24 降到 18，其中 13 个为 Prometheus 自定义工具。研究表明 LLM function calling 在工具数 <15 时准确率最高 [推测]。我们通过 5 个 Subagent 的清晰划分（每个 1-3 个工具）来保持路由模型的判断精度。
+**注意**：v3.0 将工具数从 24 降到 16（16 个 Prometheus 自定义工具 + 5 个 MTClaw builtin，Bash 砍掉后无重叠，共 21 个暴露给路由模型）。研究表明 LLM function calling 在工具数 <15 时准确率最高 [推测]，16 个略超最佳线但接近；我们通过 5 个 Subagent 的清晰划分（每个 1-5 个工具）来保持路由模型的判断精度。
 
 ---
 
@@ -885,7 +885,7 @@ exit 1
 
 ```
 □ Fork MTClaw，建立 prometheus 仓库
-□ 搭建 5 个 Subagent 的 functions.jsonl 工具定义（13 条）
+□ 搭建 5 个 Subagent 的 functions.jsonl 工具定义（16 条）
 □ 实现 wrapper 脚本骨架（13 个 .sh）
 □ 实现 Python 引擎模块：
   ├── rag_engine.py (ingest + search + status)
@@ -1016,7 +1016,7 @@ exit 1
 | `schedule_complete_task` | 日程与任务 | 1 (task_id) | 否 | 是 |
 | `chat_light` | 闲聊 | 2 (mood, memory_inject) | 否 | 否 |
 
-**工具总数**：15（含 5 个 MTClaw builtin tools 则共 20 个）
+**工具总数**：16（含 5 个 MTClaw builtin tools 则共 21 个）
 
 ## 附录 B：关键依赖版本
 

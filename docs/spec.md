@@ -57,6 +57,22 @@
 - 硬件：MTT AIBOOK（含 MTT GPU）
 - 自备服务：路由模型 API + 上游模型 API
 
+### 1.5 调研基础
+
+本项目针对 5 个 Subagent（RAG / 记忆与偏好 / 写作润色翻译 / 日程与任务 / 闲聊陪伴）及 2 个扩展模块（Router 自学习引擎 / Skills 三级加载），分别调研了 Hermes（`~/ws/hermes-agent`）、OpenClaw（`~/ws/openclaw`）、Codex（`~/ws/codex`）、MTClaw Function Router 以及 VS Code / npm 等成熟系统中对应领域的实现，提炼可借鉴点。各 Subagent / 模块的详细调研见 `docs/add/` 下对应文档的 §2 调研章节。
+
+| Subagent / 模块 | 调研对象（参考系统） | 关键借鉴点 | 详细调研 |
+|----------------|---------------------|-----------|---------|
+| **RAG 知识库** | OpenClaw memory-host-sdk（检索接口）、Hermes memory_search、Codex memories | 三者均为对话/偏好记忆而非文档索引（反例）；自建文档 RAG，参考 OpenClaw 检索接口设计 | `add-rag.md` §2 |
+| **记忆与偏好** | OpenClaw memory host SDK（query/dream/events）、Hermes memory_dream（反思引擎）、Codex Memories | "在线记忆注入 + 离线反思提取"两阶段；OpenClaw SDK 最完整，Hermes memory_dream 为反思引擎简洁参考 | `add-memory.md` §2 |
+| **写作润色翻译** | OpenClaw Skills 系统、Hermes system_prompt（写作指导） | 三者无专门写作工具；借鉴 Skills 模板化 + 系统提示词写作指导 | `add-writing.md` §2 |
+| **日程与任务** | Hermes cron_tool、OpenClaw cron 系统 | 三者均无个人日程管理（cron 面向系统调度）；自建结构化日程/任务模型 + dateparser | `add-schedule.md` §2 |
+| **闲聊陪伴** | OpenClaw Agent Harness + Skills（personality）、Codex Role System、MTClaw Completion Check | 路由模型直回 + permissive completion check；借鉴 Role System 人格策略 | `add-chat.md` §2 |
+| **Router 自学习引擎** | MTClaw FR（路由 logprob）、Codex ToolRouter（失败降级）、OpenClaw ToolAvailabilitySignal（动态权重） | FR 透传 logprob，Prometheus 外层派生置信度 + 双层路由 + 历史修正驱动策略调整 | `add-router-learning.md` §2 |
+| **Skills 三级加载** | OpenClaw 六级分层 + 后写覆盖（`workspace.ts`）、Hermes 两级 + external_dirs + 同步播种、Anthropic Skill 格式 | 三级目录（系统/用户/项目）+ 后写覆盖 + 渐进式披露 + 模型驱动/斜杠命令 | `add-skills.md` §2 |
+
+> 框架级架构参考（如 Codex Orchestrator 的审批/重试分离、multi_agents V2 的 spawn/send/wait 原语）已融入 §2 系统架构与 MTClaw FR 集成，不单独列入 Subagent 调研。
+
 ---
 
 ## 2. 系统架构
@@ -274,6 +290,48 @@ CREATE TABLE interaction_log (
 加上 MTClaw 的 5 个 builtin 工具（find/ls/cat/grep/sleep），总计 21 个工具暴露给路由模型。
 
 **注意**：v3.0 将工具数从 24 降到 16（16 个 Prometheus 自定义工具 + 5 个 MTClaw builtin，Bash 砍掉后无重叠，共 21 个暴露给路由模型）。研究表明 LLM function calling 在工具数 <15 时准确率最高 [推测]，16 个略超最佳线但接近；我们通过 5 个 Subagent 的清晰划分（每个 1-5 个工具）来保持路由模型的判断精度。
+
+### 3.7 Skills 三级加载（扩展层）
+
+**定位**：轻量级、可复用的"技能（Skill）"层，填补 Subagent（重，新增一类能力）与即时偏好（轻，仅 key/value 偏好）之间的"指令级复用"空白。扩展性创新点（加分项），详细设计见 `docs/add/add-skills.md`。
+
+**三级目录与优先级**：
+
+| 层级 | 目录 | 职责 |
+|------|------|------|
+| 系统级 | `~/.function-router/skills/` | 随 MTClaw FR 发布，全机共享（含 5 个预置技能） |
+| 用户级 | `~/.agents/skills/` | 用户个人技能，跨项目 |
+| 项目级 | `./.agents/skills/` | 随项目版本控制，仅当前项目 |
+
+优先级 **项目级 > 用户级 > 系统级**（有序加载 + 后写覆盖，以 frontmatter `name` 为键）。
+
+**SKILL.md 最小契约**（frontmatter）：
+
+```yaml
+---
+name: weekly-report-zh                       # 必填，kebab-case，优先级键
+description: "中文周报写作技能。写周报/本周总结时加载。"  # 必填，触发短语
+version: 1.0.0
+category: writing
+applies_to: [writing]                        # 生效 Subagent；空=全部
+metadata: { emoji: "📝", trigger_keywords: ["周报"] }
+---
+```
+
+仅 `name` + `description` 必填（与 Anthropic Skill 行业事实标准一致）。
+
+**渐进式披露**：Tier-1 索引（name+description）常驻路由提示词 `<available_skills>`；Tier-2 `skill_load(name)` 按需返回正文；Tier-3 `skill_load(name, file_path=)` 返回引用文件。
+
+**FR builtin 工具**（functions.jsonl）：
+
+```jsonl
+{"name":"skills_list","description":"列出当前可用的技能索引。可选按 subagent 过滤。","parameters":{"type":"object","properties":{"subagent":{"type":"string"}},"required":[]}}
+{"name":"skill_load","description":"加载某技能的完整指令正文（SKILL.md）或引用文件，用于遵循其做事流程。","parameters":{"type":"object","properties":{"name":{"type":"string"},"file_path":{"type":"string"}},"required":["name"]}}
+```
+
+> 新增 2 个 skill builtin 后，暴露给路由模型的工具数为 16 自定义 + 7 builtin = 23。`skill_load`/`skills_list` 属"元工具"（仅加载技能时调用，不参与意图路由判断），对路由准确率影响可控；若实测有损，可将 `skills_list` 移出工具集（索引已直接注入提示词）。
+
+**与 Subagent 的区别**：技能只提供指令/模板（上下文），不注册 functions.jsonl 工具，不膨胀路由工具数。
 
 ---
 
@@ -537,6 +595,16 @@ CREATE INDEX idx_interaction_subagent ON interaction_log(subagent, timestamp);
     └── prometheus             # 一键启停 CLI
 ```
 
+**Skills 三级目录**（独立于 `~/.prometheus/`，见 §3.7）：
+
+```
+~/.function-router/skills/     # 系统级（随 MTClaw FR 安装，全机共享）
+~/.agents/skills/               # 用户级（跨项目）
+./.agents/skills/              # 项目级（随项目版本控制，相对当前工作目录）
+~/.prometheus/skills/
+└── .skills_index.json         # 三级合并后的索引快照（加速重启）
+```
+
 ---
 
 ## 6. API 与接口
@@ -550,7 +618,6 @@ CREATE INDEX idx_interaction_subagent ON interaction_log(subagent, timestamp);
 | POST | `/v1/chat/completions` | 核心聊天补全 |
 | GET | `/v1/models` | 模型列表 |
 | GET | `/health` | 健康检查 |
-| GET | `/v1/tool_history` | 工具执行历史 |
 | GET | `/v1/tools` | 已加载工具列表 |
 | POST | `/v1/execute_tool` | 执行单个工具 |
 
@@ -587,6 +654,17 @@ def chat(mood: str = "auto", memory_inject: bool = True) -> dict
 # preference_engine.py
 def detect_and_store_preference(user_message: str) -> dict | None
 def run_daily_maintenance() -> dict
+
+# skills_engine.py
+def load_all_skills(cwd: str = None) -> dict[str, SkillRecord]
+def get_skill_index(subagent: str = None) -> list[dict]
+def load_skill(name: str, file_path: str = None) -> dict
+def parse_skill_md(path: Path) -> Skill | None
+def validate_skill_manifest(skill: Skill) -> tuple[bool, str]
+def create_skill(name: str, tier: str, category: str = None) -> dict
+def reload_skills() -> dict
+def list_overrides(name: str) -> list[dict]
+def doctor() -> dict
 ```
 
 ### 6.3 配置示例
@@ -627,6 +705,18 @@ def run_daily_maintenance() -> dict
     "max_memories_per_user": 1000,
     "embedding_model": "BAAI/bge-m3",
     "embedding_device": "cpu"
+  },
+  "skills": {
+    "tier_dirs": {
+      "system": "~/.function-router/skills",
+      "user": "~/.agents/skills",
+      "project": "./.agents/skills"
+    },
+    "disabled": [],
+    "max_skills_in_prompt": 20,
+    "max_skill_file_bytes": 51200,
+    "auto_reload_fr": true,
+    "index_snapshot": true
   }
 }
 ```
@@ -703,6 +793,13 @@ MTClaw 仓库（https://github.com/MooreThreads/MTClaw）
 │   ├── schedule/                    # 日程与任务 Subagent
 │   └── chat/                        # 闲聊陪伴 Subagent
 │
+├── skills/                          # 预置系统级技能（安装时拷到 ~/.function-router/skills）
+│   ├── weekly-report-zh/SKILL.md
+│   ├── meeting-minutes-zh/SKILL.md
+│   ├── note-tagging/SKILL.md
+│   ├── task-eisenhower/SKILL.md
+│   └── polish-academic/SKILL.md
+│
 ├── templates/                       # 写作模板
 │   ├── weekly_report.md
 │   ├── email_formal.md
@@ -711,9 +808,6 @@ MTClaw 仓库（https://github.com/MooreThreads/MTClaw）
 │   ├── meeting_minutes.md
 │   ├── article.md
 │   └── ppt_outline.md
-│
-├── dashboard/                       # 路由追踪面板
-│   └── route_tracer.html
 │
 ├── config/                          # 预置配置
 │   ├── config.example.json
@@ -761,7 +855,6 @@ MTClaw 仓库（https://github.com/MooreThreads/MTClaw）
   │   ├── schedule/             # 日程与任务 Subagent
   │   └── chat/                 # 闲聊陪伴 Subagent
   ├── templates/                # 写作模板
-  ├── dashboard/                # 路由追踪面板
   └── install/                  # MTClaw 自带安装脚本（扩展）
 ```
 
@@ -853,30 +946,6 @@ exit 1
         -> 自动生成符合偏好的周报
 ```
 
-### 10.3 路由追踪展示
-
-演示时双屏展示：
-
-```
-左屏: Hermes 对话窗口
-右屏: 路由追踪面板（route_tracer.html 实时刷新）
-```
-
-路由追踪面板通过轮询 `/v1/tool_history` API 展示路由决策链路：
-
-```json
-{
-  "timestamp": "2026-07-12T15:30:00",
-  "user_message": "找一下关于 GPU 算力的笔记",
-  "route": "rag_search",
-  "tool_rounds": 1,
-  "latency_ms": 1800,
-  "status": "task_complete"
-}
-```
-
-颜色标记：绿(TASK_COMPLETE) / 黄(TASK_INCOMPLETE) / 红(错误)，帮助评委直观理解 Router 分发逻辑。
-
 ---
 
 ## 11. 里程碑计划
@@ -937,7 +1006,7 @@ exit 1
 
 ## 12. 评估维度自检清单
 
-> 实现任务追踪见 `docs/CHECKLIST.md`。本节是面向赛题评分维度的验收标准。
+> 实现任务追踪见 `docs/CHECKLIST.md`，按模块分节：§1 RAG（RAG-001~025）/ §2 记忆与偏好（MEM-001~031）/ §3 写作润色翻译（WRT-001~027）/ §4 日程与任务（SCH-001~033）/ §5 闲聊陪伴（CHT-001~015）/ §6 Router 自学习引擎（RL-001~046）/ §6.5 即时偏好引擎（PREF-001~006）/ §8 Skills 三级加载（SKL-001~040）。本节是面向赛题评分维度的验收标准。
 
 ### 快（速度）
 
@@ -992,6 +1061,7 @@ exit 1
 - [ ] 路由准确率实测数据（50 条测试集，非编造）[目标]
 - [ ] 即时偏好学习演示（演示中即时可见）[设计保证]
 - [ ] 路由 fallback 安全网（路由故障永不无响应）[设计保证]
+- [ ] Skills 三级加载：系统/用户/项目级后写覆盖 + 渐进式披露 + 项目自适应演示 [目标]
 
 ---
 

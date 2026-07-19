@@ -1,6 +1,6 @@
 # Prometheus 实现 Checklist
 
-> 最后更新：2026-07-14
+> 最后更新：2026-07-19
 > 统一进度追踪文件。所有 Subagent 的实现任务汇总在此。
 > 详细设计见 `docs/add/` 下各 ADD 文档。
 
@@ -17,9 +17,9 @@
 | 闲聊陪伴 | 15 | 0 | 0 | 15 | 0% |
 | Router 自学习引擎 | 46 | 0 | 0 | 46 | 0% |
 | 即时偏好引擎（辅助） | 6 | 0 | 0 | 6 | 0% |
-| Subagent 市场 | 40 | 0 | 0 | 40 | 0% |
-| 系统集成 | 12 | 0 | 0 | 12 | 0% |
-| **合计** | **234** | **0** | **0** | **234** | **0%** |
+| Skills 三级加载 | 40 | 0 | 0 | 40 | 0% |
+| 系统集成 | 11 | 0 | 0 | 11 | 0% |
+| **合计** | **233** | **0** | **0** | **233** | **0%** |
 
 ---
 
@@ -355,81 +355,85 @@
 ## 7. 系统集成
 
 - [ ] SYS-001 合入 MTClaw 仓库 subagents/ 目录结构
-- [ ] SYS-002 扩展 MTClaw install.sh（支持 Prometheus Subagent 安装）
-- [ ] SYS-003 聚合 functions.jsonl（由市场机制负责，详见 §8 MKT-027/028）
+- [ ] SYS-002 扩展 MTClaw install.sh（支持 Prometheus Subagent 安装 + 预置系统级技能拷到 `~/.function-router/skills`，详见 §8 SKL-030）
+- [ ] SYS-003 聚合 functions.jsonl（安装时静态聚合 5 个官方 Subagent 工具定义；技能 builtin 注册见 §8 SKL-021）
 - [ ] SYS-004 配置路由模型 + 上游模型（路由模型启用 logprobs=true）
 - [ ] SYS-005 端到端验证：单轮对话 5 种领域路由
 - [ ] SYS-006 路由准确率测试套件（50 条混合意图）
-- [ ] SYS-007 路由追踪面板 route_tracer.html（含置信度/修正历史展示）
-- [ ] SYS-008 演示剧本排练（10 轮连续对话 + 5 轮进化演示 + 市场演示）
-- [ ] SYS-009 样本数据准备（笔记/CSV/周报范例）
-- [ ] SYS-010 写作模板创建（7 个）
-- [ ] SYS-011 一键安装流程验证
-- [ ] SYS-012 演示录屏备份
+- [ ] SYS-007 演示剧本排练（10 轮连续对话 + 5 轮进化演示 + 技能三级覆盖演示）
+- [ ] SYS-008 样本数据准备（笔记/CSV/周报范例）
+- [ ] SYS-009 写作模板创建（7 个）
+- [ ] SYS-010 一键安装流程验证
+- [ ] SYS-011 演示录屏备份
 
 ---
 
-## 8. Subagent 市场（赛题加分项）
+## 8. Skills 三级加载（赛题扩展性创新点）
 
-详细设计：`docs/add/add-market.md`
+详细设计：`docs/add/add-skills.md`
 
 ### 数据层
 
-- [ ] MKT-001 定义 `subagent.json` schema（JSON Schema）
-- [ ] MKT-002 定义 `registry.json` schema
-- [ ] MKT-003 创建 `installed_subagents.json` 本地状态文件
-- [ ] MKT-004 创建 `registry_cache.json` 缓存机制
+- [ ] SKL-001 定义 `SKILL.md` frontmatter schema（JSON Schema）
+- [ ] SKL-002 定义 `SkillRecord` 数据结构（skill + tier + source_path + overridden_by）
+- [ ] SKL-003 创建 `~/.prometheus/skills/.skills_index.json` 索引快照格式
+- [ ] SKL-004 创建 `config.skills` 配置 schema（tier_dirs / disabled / limits）
 
-### Registry
+### 加载与优先级
 
-- [ ] MKT-005 创建 `subagents/registry.json` 索引文件（5 个官方条目）
-- [ ] MKT-006 实现 `fetch_registry()` - 带缓存的远程索引拉取
-- [ ] MKT-007 实现缓存 TTL 机制（默认 24 小时）
-- [ ] MKT-008 实现离线降级（缓存过期但网络不可用时，使用旧缓存）
+- [ ] SKL-005 实现 `parse_skill_md()` - frontmatter 解析（YAML）
+- [ ] SKL-006 实现 `validate_skill_manifest()` - name/description 校验
+- [ ] SKL-007 实现三级目录扫描（system -> user -> project）
+- [ ] SKL-008 实现后写覆盖优先级（Map by name，project > user > system）
+- [ ] SKL-009 实现覆盖链标注（`list_overrides()`）
+- [ ] SKL-010 实现路径解析（环境变量覆盖 + 项目级相对 cwd）
+- [ ] SKL-011 实现禁用过滤（config.skills.disabled）
+
+### 发现与调用
+
+- [ ] SKL-012 实现 `get_skill_index()` - Tier-1 索引构建
+- [ ] SKL-013 实现按 Subagent 过滤（applies_to 三态语义）
+- [ ] SKL-014 实现 `<available_skills>` 提示词片段渲染
+- [ ] SKL-015 实现 `load_skill()` - Tier-2 正文加载
+- [ ] SKL-016 实现 `load_skill(file_path=)` - Tier-3 引用文件加载
+- [ ] SKL-017 实现索引快照写入/读取（加速重启）
+
+### FR 集成（分层）
+
+> 分层落点：FR 暴露 `skill_load`/`skills_list` 通用 builtin（可上游贡献），普罗米修斯外层做三级优先级与注入（差异化）。详见 `add-skills.md` §3.7。
+
+**FR 层（通用能力）**：
+- [ ] SKL-018 [FR·配置] FR 暴露 `skill_load` / `skills_list` builtin 工具（若 MTClaw 无，提小 PR 补充）
+
+**普罗米修斯层（差异化）**：
+- [ ] SKL-019 FR 启动时调用 `load_all_skills()` 扫描三级目录
+- [ ] SKL-020 将 Tier-1 索引注入路由提示词 `<available_skills>`
+- [ ] SKL-021 注册 `skill_load`/`skills_list` 到 functions.jsonl
+- [ ] SKL-022 实现 `POST /v1/reload` 触发技能重载
 
 ### CLI
 
-- [ ] MKT-009 实现 `prometheus market list` - 列出所有 Subagent
-- [ ] MKT-010 实现 `prometheus market list --category` / `--source` 过滤
-- [ ] MKT-011 实现 `prometheus market info <name>` - 详情展示
-- [ ] MKT-012 实现 `prometheus market search <keyword>` - 关键词搜索
-- [ ] MKT-013 实现 `prometheus market install <name>` - 安装流程
-- [ ] MKT-014 实现 `prometheus market install <name>@version` - 指定版本
-- [ ] MKT-015 实现 `prometheus market remove <name>` - 卸载流程
-- [ ] MKT-016 实现 `prometheus market update <name>` - 更新流程
-- [ ] MKT-017 实现 `prometheus market update --all` - 批量更新
-- [ ] MKT-018 实现 `prometheus market installed` - 已安装列表
-- [ ] MKT-019 实现 `prometheus market outdated` - 可更新列表
-- [ ] MKT-020 实现 `prometheus market refresh` - 刷新缓存
+- [ ] SKL-023 实现 `prometheus skills list`（含 --tier / --category 过滤）
+- [ ] SKL-024 实现 `prometheus skills info <name>`（含覆盖链展示）
+- [ ] SKL-025 实现 `prometheus skills paths`
+- [ ] SKL-026 实现 `prometheus skills create <name>`（骨架生成）
+- [ ] SKL-027 实现 `prometheus skills reload`
+- [ ] SKL-028 实现 `prometheus skills enable/disable`
+- [ ] SKL-029 实现 `prometheus skills doctor`（诊断冲突/非法/孤儿）
 
-### 安装/卸载引擎
+### 预置与演示
 
-- [ ] MKT-021 实现 `validate_manifest()` - subagent.json 校验
-- [ ] MKT-022 实现 `install_subagent()` - 完整安装流程（下载 + 校验 + 依赖 + 注册 + 重载）
-- [ ] MKT-023 实现 `remove_subagent()` - 完整卸载流程
-- [ ] MKT-024 实现官方预置保护（不允许卸载官方 Subagent）
-- [ ] MKT-025 实现依赖检查与安装（Python pip + 系统依赖提示）
-- [ ] MKT-026 实现兼容性检查（MTClaw / AIOS 版本）
-
-### FR 集成
-
-- [ ] MKT-027 实现 `merge_functions_jsonl()` - 工具定义合并
-- [ ] MKT-028 实现 `unmerge_functions_jsonl()` - 工具定义反注册
-- [ ] MKT-029 实现 FR 启动时扫描已安装 Subagent
-- [ ] MKT-030 实现 FR 热重载 API（`POST /v1/reload`）
-- [ ] MKT-031 实现 FR 热重载不中断现有连接
-
-### 演示与文档
-
-- [ ] MKT-032 准备 1-2 个社区示例 Subagent（weather / finance）用于演示
-- [ ] MKT-033 编写社区贡献指南（subagent.json 规范 + PR 流程）
-- [ ] MKT-034 演示剧本：market list / install / remove 完整流程
+- [ ] SKL-030 预置 5 个系统级技能（weekly-report-zh / meeting-minutes-zh / note-tagging / task-eisenhower / polish-academic）
+- [ ] SKL-031 准备演示用用户级覆盖技能（weekly-report-zh 含签名档）
+- [ ] SKL-032 准备演示用项目级覆盖技能（weekly-report-zh 含里程碑章节）
+- [ ] SKL-033 演示剧本：三级覆盖 + 项目上下文自适应
 
 ### 测试
 
-- [ ] MKT-035 单元测试：subagent.json 校验（合法/非法格式）
-- [ ] MKT-036 单元测试：registry 缓存机制
-- [ ] MKT-037 集成测试：install -> list installed -> remove 端到端
-- [ ] MKT-038 集成测试：FR 热重载（安装后立即可用）
-- [ ] MKT-039 集成测试：官方预置保护
-- [ ] MKT-040 集成测试：离线模式（缓存可用，远程不可达）
+- [ ] SKL-034 单元测试：SKILL.md 解析（合法/非法 frontmatter）
+- [ ] SKL-035 单元测试：三级优先级覆盖（同名 project>user>system）
+- [ ] SKL-036 单元测试：按 Subagent 过滤（applies_to 三态）
+- [ ] SKL-037 单元测试：路径解析（环境变量 + cwd 相对）
+- [ ] SKL-038 集成测试：skill_load 端到端（路由 -> 加载 -> 注入 -> 生成）
+- [ ] SKL-039 集成测试：FR 热重载（新增技能后立即可用）
+- [ ] SKL-040 集成测试：项目切换后技能集变化（项目级回退用户级）

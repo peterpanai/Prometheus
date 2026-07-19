@@ -1,8 +1,80 @@
 # 变更日志（Changelog）
 
-> 本文件独立记录普罗米修斯设计文档（`design-proposal.md` / `spec.md`）的版本变更历史。
+> 本文件独立记录普罗米修斯设计文档（`普罗米修斯设计方案.md` / `spec.md`）的版本变更历史。
 > 设计文档为最终交付件，不再内嵌调整日志，所有版本间变更统一归档于此。
 > 各条目下方标注其在原设计文档中的出处，便于溯源。
+
+## v3.4
+
+<!-- 原位置：普罗米修斯设计方案.md §7.4 / §9.2；spec.md §1.5 / §3.7 / §12；CHECKLIST.md §8；add/add-market.md；add/add-skills.md -->
+
+相比 v3.3，v3.4 移除“Subagent 市场”机制（CLI + registry 索引 + 安装/卸载/更新 + 社区贡献），并修正 §1.1 一句话核心的过时重心：
+
+| 变更 | 原因 | 影响 |
+|------|------|------|
+| **移除 §7.4 Subagent 市场** | 市场 CLI（浏览/安装/卸载社区 Subagent）看不到明显受益，聚焦核心 5 Subagent + 一键安装 | §7.4 整节删除；§7 仅余 7.1~7.3（7.4 为末节，无需重编号） |
+| **§9.2 开箱即用聚焦一键安装 + 预置 5 Subagent** | “开箱即用”的实际受益是评委 `./install.sh` 后即用 5 Subagent；“市场”部分砍掉 | §9.2 标题与正文移除市场 CLI/registry/演示；保留一键安装 + 预置 5 Subagent 作为赛题加分项 |
+| **删除 `add/add-market.md`** | 整文档围绕市场机制，随功能移除 | 文件删除 |
+| **CHECKLIST 删 §8（MKT-001~040）** | 市场任务全部移除 | §8 删除；§9 Skills 重编号为 §8；SKL-041（市场协同测试）删除，SKL 41->40；总览合计 274->233 |
+| **Skills 与市场解耦** | “市场包携带技能（subagent.json provides.skills）”依赖市场安装 | add-skills.md §3.9 / §6.2 移除市场协同小节；SKL-022 去市场引用 |
+| **§1.1 一句话核心更新** | 原口号中柱“即时偏好学习”是 v3.1 前的旧核心（v3.1 已降为辅助），且只提 5 Subagent、漏 Router 自学习 / Skills（§2 共 8 模块） | 口号改为“分而治之 + Router 自学习 + 本地隐私优先”；正文覆盖 5 Subagent + Router 自学习 + 即时偏好(辅助) + Skills |
+
+**影响范围**：
+- `普罗米修斯设计方案.md`：删 §7.4；§9.2 聚焦一键安装 + 预置 5 Subagent；§2.8.6 / §8.2 / §8.3 / §8.5 / §9 加分项表 / §9.4 / §10 评分矩阵移除“市场”/“provides.skills”引用；§1.1 一句话核心更新（口号中柱 即时偏好学习->Router 自学习，正文补全 Router 自学习 + Skills）
+- `spec.md`：§1.5 调研基础表移除市场行、扩展模块 3->2；§3.7 移除 provides.skills；§12 CHECKLIST 引用更新为 §8 Skills（SKL-001~040）
+- `CHECKLIST.md`：删 §8 Subagent 市场（MKT-001~040）；§9 Skills -> §8；SKL-041 删除（SKL 41->40）；SYS-002/003/007 去市场引用；总览 274->233
+- `add/add-market.md`：删除
+- `add/add-skills.md`：§3.9 / §6.2 移除市场协同；SKL-022 / SKL-041 去市场引用
+
+**说明**：Subagent 市场是赛题“开箱即用”加分项中“含预置 Subagent 市场”的具体机制，本次砍掉该机制。Prometheus 仍实现 2 个赛题加分项（Router 自学习、开箱即用=一键安装 + 预置 5 Subagent）+ 2 个扩展创新点（路由 fallback 安全网、Skills 三级加载）。“开箱即用”以一键安装包 + 预置 5 Subagent 落地；“市场”（浏览/安装/卸载社区 Subagent 的 CLI）未实现。
+
+## v3.3
+
+<!-- 原位置：普罗米修斯设计方案.md §7.3 / §9.2；spec.md §6.1 / §10.3 -->
+
+相比 v3.2，v3.3 移除"可视化路由追踪"加分项（路由追踪面板 route_tracer.html + /v1/tool_history 接口）：
+
+| 变更 | 原因 | 影响 |
+|------|------|------|
+| **移除路由追踪面板 route_tracer.html** | 用户决策砍掉 UI 可视化，看不到明显受益，聚焦核心路由/记忆/技能 | §7.3 路由追踪面板、§9.2 可视化路由追踪 加分项删除 |
+| **移除 /v1/tool_history 接口** | 该接口仅服务于路由追踪面板，无其他消费方 | spec.md §6.1 API 表移除该行 |
+| **§7/§9 重新编号** | 删除 §7.3、§9.2 后补齐编号 | §7.4->7.3、§7.5->7.4；§9.3->9.2、§9.4->9.3、§9.5->9.4 |
+| **CHECKLIST SYS 重新编号** | 删除 SYS-007（route_tracer） | SYS-008~012->007~011；总览合计 275->274 |
+
+**影响范围**：
+- `普罗米修斯设计方案.md`：删 §7.3 路由追踪面板、§9.2 可视化路由追踪；§7/§9 重编号；§9 加分项汇总由五项改四项（Prometheus 实现 Router 自学习 + 开箱即用 两项赛题加分项，加 路由 fallback + Skills 两扩展创新点）；§10 评分矩阵相应行移除
+- `spec.md`：§6.1 移除 /v1/tool_history、§8/§9.1 移除 dashboard/、§10.3 路由追踪展示演示删除
+- `CHECKLIST.md`：删 SYS-007，SYS 重编号，总览 275->274
+- `add/add-router-learning.md`、`add/add-market.md`、`add/add-skills.md`：移除"与路由追踪面板的关系"小节及交叉引用
+
+**说明**：可视化路由追踪是赛题 3 个官方加分项之一，本次移除后 Prometheus 实现 2 个官方加分项（Router 自学习、开箱即用）+ 2 个扩展创新点（路由 fallback 安全网、Skills 三级加载）。
+
+## v3.2
+
+<!-- 原位置：普罗米修斯设计方案.md §2.8 / §9.4；spec.md §3.7 -->
+
+相比 v3.1，v3.2 新增"Skills 三级加载"扩展性创新点（加分项）：
+
+| 变更 | 原因 | 影响 |
+|------|------|------|
+| **新增 Skills 三级加载系统** | **Subagent（重）与即时偏好（轻 key/value）之间缺少"指令级复用"层；调研 OpenClaw 六级分层、Hermes 两级+external_dirs 后提炼三级模型** | **系统/用户/项目三级目录 + 后写覆盖（project>user>system）+ 渐进式披露 + 模型驱动/斜杠命令双通道** |
+| **新增 SKILL.md 标准格式** | 行业事实标准（Anthropic Skill / OpenClaw / Hermes 一致） | 仅 `name`+`description` 最小契约，社区可贡献 |
+| **新增 FR builtin `skill_load`/`skills_list`** | 渐进式披露需按需加载技能正文 | 暴露给路由模型工具数 21->23（元工具，不参与意图路由） |
+| **新增项目上下文自适应** | 个人认知智能体应随"当前项目"切换技能集 | 项目级 `./.agents/skills` 随仓库版本控制，切项目即切技能 |
+| **市场与技能协同** | 重/轻双层扩展体系 | `subagent.json` 新增 `provides.skills`，市场包可携带技能到用户级 |
+
+**新增文档**：`docs/add/add-skills.md`（§2 调研 OpenClaw `src/skills/loading/workspace.ts:1149-1235` 等、Hermes `tools/skills_tool.py:695-739` 等；§3 设计决策；§5 实现 Checklist SKL-001~041）。
+
+**同步更新**：
+- `普罗米修斯设计方案.md`：§1.3 架构总览（路由提示词含 `<available_skills>`）、§2.8 Skills 三级加载、§8.5 可复用性（Skill 可复用）、§9.4 加分项、§10 评分矩阵（狠 + 加分项行）
+- `spec.md`：§1.5 调研基础表（+Skills 行）、§3.7 Skills 规格、§5.3 存储路径（三级目录+索引快照）、§6.2 skills_engine 接口、§6.3 skills 配置、§8 文件结构（+skills/ 预置目录）、§12 加分项清单
+- `CHECKLIST.md`：新增 §9 Skills 三级加载（SKL-001~041，41 项）、§7 系统集成交叉引用、总览合计 234->275
+
+**三级目录与优先级**（用户指定）：
+- 系统级 `~/.function-router/skills`（随 MTClaw FR 发布）
+- 用户级 `~/.agents/skills`（跨项目）
+- 项目级 `./.agents/skills`（随仓库版本控制）
+- 优先级：项目级 > 用户级 > 系统级（后写覆盖）
 
 ## v3.1
 

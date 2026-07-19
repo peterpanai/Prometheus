@@ -594,14 +594,6 @@ prometheus router calibrate      # 手动触发阈值校准
 
 闲聊 Subagent 的 complex 消息禁止规则（[add-chat.md](add-chat.md)）作为**硬约束**，优先于置信度判断。即使置信度 ≥ 0.75，如果输入命中 complex 规则，也不会路由到 chat_light。
 
-### 6.3 与路由追踪面板的关系
-
-路由追踪面板（[design-proposal.md](../design-proposal.md) §7.3）新增展示：
-- 路由置信度
-- 路由层级（L1/L2）
-- 修正历史（最近 5 次）
-- 动态调整状态（关键词权重 / 优先级 / 阈值）
-
 ## 7. 风险与缓解
 
 | 风险 | 缓解 |
